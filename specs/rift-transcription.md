@@ -15,17 +15,17 @@
 
 ### More Examples
 
-| Goal                | Original Transcription | Editing Actions                                         | Result                      |
-| ------------------- | ---------------------- | ------------------------------------------------------- | --------------------------- |
-| **Insert (voice)**  | Send the report        | 1. click after `the`<br>2. speak `quarterly`            | Send the _quarterly_ report |
-| **Insert (typed)**  | Call me tomorrow       | 1. click after `me`<br>2. type ` back`                  | Call me _back_ tomorrow     |
-| **Insert (mixed)**  | Yes                    | 1. type ` (`<br>2. speak `finally`<br>3. type `!)`      | Yes _(finally!)_            |
-| **Replace (voice)** | Meet at the cafe       | 1. select `cafe`<br>2. speak `library`                  | Meet at the _library_       |
-| **Fix homophone**   | Your welcome           | 1. select `Your welcome`<br>2. 🪄 Enhance Transcription | _You're welcome_            |
-| **Delete + voice**  | The very big dog       | 1. select `very big`<br>2. speak `small`                | The _small_ dog             |
-| **Type then speak** |                        | 1. type `Svelte `\*<br>2. speak `component`             | _Svelte component_          |
+| Goal                                                                | Original Transcription | Editing Steps                                                    | Result                         |
+| ------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------- | ------------------------------ |
+| **Insert word**<br><small>(voice)</small>                           | It's in stock          | 1. click after `It's`<br>2. speak `no longer`                    | It's _no longer_ in stock      |
+| **Insert term\***<br><small>(keyboard)</small>                      | Download the app       | 1. click after `the`<br>2. type `Lyft `                          | Download the _Lyft_ app        |
+| **Insert term\***<br><small>(keyboard+voice)</small>                |                        | 1. type `Svelte `<br>2. speak `component`                        | _Svelte component_             |
+| **Insert punctuation**<br><small>(keyboard+voice)</small><br>&nbsp; | ASL                    | 1. type ` (`<br>2. speak `American Sign Language`<br>3. type `)` | ASL _(American Sign Language)_ |
+| **Edit word**<br><small>(voice)</small>                             | Meet at the cafe       | 1. select `cafe`<br>2. speak `library`                           | Meet at the _library_          |
+| **Edit suffix**<br><small>(keyboard)</small>                        | It works perfectly     | 1. delete `s` in `works`<br>2. type `ed`                         | It work*ed* perfectly          |
+| **Improve transcription**<br><small>(action)</small>                | Your welcome           | 1. select `Your welcome`<br>2. 🪄 Enhance Transcription          | _You're welcome_               |
 
-\*ASR often transcribes "Svelte" as "Belt", "Help", "Spelt", etc.
+\*ASR often mistranscribes terms: "Lyft" → "lift"/"left", "Svelte" → "belt"/"spelt"/"help".
 
 ---
 
@@ -125,7 +125,7 @@ function handleCursorInterrupt(position: number, time: number) {
 	tracker.utterances.set(newId, {
 		id: newId,
 		status: 'active',
-		anchorPosition: position,
+		anchorPosition: position
 	});
 	tracker.currentUtteranceId = newId;
 
@@ -177,7 +177,7 @@ ProseMirror decoration based on utterance status:
 function interimDecoration(utteranceId: string, from: number, to: number) {
 	return Decoration.inline(from, to, {
 		class: 'interim-text', // styled via CSS
-		'data-utterance': utteranceId,
+		'data-utterance': utteranceId
 	});
 }
 ```
@@ -214,9 +214,9 @@ function extractSpans(doc: Node): Span[] {
 				audio: mark?.attrs.audioRef
 					? {
 							recordingId: mark.attrs.audioRef,
-							timeRange: mark.attrs.timeRange,
+							timeRange: mark.attrs.timeRange
 						}
-					: undefined,
+					: undefined
 			});
 		}
 	});
@@ -274,8 +274,8 @@ const pauseNode = {
 	attrs: {
 		duration: {}, // milliseconds
 		audioRef: {}, // recording ID
-		timeRange: {}, // [start, end] in recording
-	},
+		timeRange: {} // [start, end] in recording
+	}
 };
 
 // Derived type for export/playback
@@ -334,7 +334,7 @@ const pauseNode = {
 	attrs: {
 		duration: { default: 500 },
 		audioRef: { default: null },
-		timeRange: { default: null },
+		timeRange: { default: null }
 	},
 	toDOM(node) {
 		return [
@@ -342,11 +342,11 @@ const pauseNode = {
 			{
 				class: 'pause-marker',
 				'data-duration': node.attrs.duration,
-				title: `${node.attrs.duration}ms pause`,
+				title: `${node.attrs.duration}ms pause`
 			},
-			'⏸️',
+			'⏸️'
 		];
-	},
+	}
 };
 ```
 
@@ -458,7 +458,7 @@ import { createTaggedError } from 'wellcrafted/error';
 
 // Errors
 const { TranscriptionError, TranscriptionErr } = createTaggedError(
-	'TranscriptionError',
+	'TranscriptionError'
 ).withContext<{ backend: string }>();
 type TranscriptionError = ReturnType<typeof TranscriptionError>;
 
@@ -548,9 +548,7 @@ function detectBackend(): Result<TranscriptionBackend, BackendError> {
 }
 
 // Allow explicit override
-function selectBackend(
-	config: Config,
-): Result<TranscriptionBackend, BackendError> {
+function selectBackend(config: Config): Result<TranscriptionBackend, BackendError> {
 	if (config.preferredBackend) {
 		return Ok(createBackend(config.preferredBackend));
 	}
@@ -745,16 +743,16 @@ const trackPlugin = new Plugin({
 				const inverted = tr.steps.map((step, i) => ({
 					step: step.invert(tr.docs[i]),
 					origin,
-					audioRef,
+					audioRef
 				}));
 				return {
 					...tracked,
-					uncommittedSteps: tracked.uncommittedSteps.concat(inverted),
+					uncommittedSteps: tracked.uncommittedSteps.concat(inverted)
 				};
 			}
 			return tracked;
-		},
-	},
+		}
+	}
 });
 
 // When inserting transcription
@@ -763,7 +761,7 @@ view.dispatch(
 		.insert(pos, content)
 		.setMeta('origin', 'transcription')
 		.setMeta('audioRef', utterance.audioRef)
-		.setMeta('timeRange', [start, end]),
+		.setMeta('timeRange', [start, end])
 );
 ```
 
@@ -797,7 +795,7 @@ const editorProps = {
 		const tr = view.state.tr.replaceSelection(slice).setMeta('origin', 'paste');
 		view.dispatch(tr);
 		return true;
-	},
+	}
 };
 ```
 
@@ -815,7 +813,7 @@ const transcriptionMark = {
 		audioRef: { default: null },
 		timeRange: { default: null },
 		confidence: { default: null },
-		utteranceId: { default: null },
+		utteranceId: { default: null }
 	},
 	toDOM(mark) {
 		return [
@@ -823,11 +821,11 @@ const transcriptionMark = {
 			{
 				class: `origin-${mark.attrs.origin}`,
 				'data-audio-ref': mark.attrs.audioRef,
-				'data-time-range': JSON.stringify(mark.attrs.timeRange),
+				'data-time-range': JSON.stringify(mark.attrs.timeRange)
 			},
-			0,
+			0
 		];
-	},
+	}
 };
 ```
 
@@ -840,14 +838,14 @@ function utteranceDecorations(utterance: Utterance, from: number, to: number) {
 	return DecorationSet.create(doc, [
 		// Underline for interim text
 		Decoration.inline(from, to, {
-			class: 'interim-text',
+			class: 'interim-text'
 		}),
 		// Widget showing where next words will insert
 		Decoration.widget(utterance.anchorPosition, () => {
 			const marker = document.createElement('span');
 			marker.className = 'transcription-cursor';
 			return marker;
-		}),
+		})
 	]);
 }
 ```
@@ -857,11 +855,7 @@ function utteranceDecorations(utterance: Utterance, from: number, to: number) {
 When transcription arrives while user is typing:
 
 ```typescript
-function insertTranscription(
-	view: EditorView,
-	text: string,
-	utterance: Utterance,
-) {
+function insertTranscription(view: EditorView, text: string, utterance: Utterance) {
 	const { state } = view;
 	const tr = state.tr;
 
@@ -872,9 +866,9 @@ function insertTranscription(
 			schema.marks.transcription.create({
 				origin: 'transcription',
 				audioRef: utterance.audioRef,
-				timeRange: utterance.timeRange,
-			}),
-		]),
+				timeRange: utterance.timeRange
+			})
+		])
 	);
 
 	// Map user's selection to account for inserted text
@@ -999,11 +993,8 @@ Their `Player` class:
 ```typescript
 // Element-based time can be buggy, so they also track system clock
 const elementBasedPosition =
-	element.currentTime -
-	currentRenderItem.sourceStart +
-	currentRenderItem.absoluteStart;
-const clockBasedPosition =
-	Date.now() / 1000 - startTime + currentRenderItem.absoluteStart;
+	element.currentTime - currentRenderItem.sourceStart + currentRenderItem.absoluteStart;
+const clockBasedPosition = Date.now() / 1000 - startTime + currentRenderItem.absoluteStart;
 return Math.max(elementBasedPosition, clockBasedPosition);
 ```
 

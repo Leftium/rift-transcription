@@ -1,0 +1,2 @@
+- rift-transcription.md: main spec
+- transcription-rs: spec for related project

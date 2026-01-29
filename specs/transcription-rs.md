@@ -2,7 +2,9 @@
 
 ## Overview
 
-A new crate (`transcription-rs`) with a layered API design that exposes low-level control while providing high-level convenience. The existing `transcribe-rs` crate becomes a thin deprecated wrapper for backward compatibility.
+Batch transcription completes in a single call: audio in, text out. Although the results are similar, streaming transcription required a new architecture—essentially many small batch transcriptions with interim results.
+
+For consistency, a new batch transcription API was created next to the streaming API. It returns `Vec<Transcript>` instead of a single result with nested segments. Additionally, the batch API was improved with borrowed `&[f32]` and richer metadata. The old crate became a thin deprecated wrapper of the new API.
 
 ### Crate Strategy
 
@@ -11,7 +13,8 @@ A new crate (`transcription-rs`) with a layered API design that exposes low-leve
 | **`transcription-rs`** | New        | Rich API with streaming support, `Transcript` type         |
 | **`transcribe-rs`**    | Deprecated | Thin wrapper, transforms to old `TranscriptionResult` type |
 
-**Migration path:**
+<details>
+<summary>Migration path</summary>
 
 ```toml
 # Old
@@ -23,23 +26,28 @@ transcribe-rs = "0.2"  # now wraps transcription-rs
 transcription-rs = "0.1"
 ```
 
-Consumers choose their level of abstraction within `transcription-rs`.
+The new crate introduces `Transcript`; the deprecated crate keeps `TranscriptionResult` for backward compatibility:
+
+| Crate              | Type                  |
+| ------------------ | --------------------- |
+| `transcription-rs` | `Transcript`          |
+| `transcribe-rs`    | `TranscriptionResult` |
+
+</details>
 
 ## API Layers
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ HIGH LEVEL - Callback-based (library owns threads)          │
-│ Engine::start_listening(callback) / push_audio / stop       │
-├─────────────────────────────────────────────────────────────┤
-│ LOW LEVEL - Pull-based (consumer owns loop)                 │
-│ StreamingDecoder trait + drain_results() helper             │
-├─────────────────────────────────────────────────────────────┤
-│ sherpa-onnx / other backends                                │
-└─────────────────────────────────────────────────────────────┘
-```
+Choose one:
 
-## Data Types (Shared Across All Layers)
+- **High level:** Push audio, receive callbacks. Library manages threading.
+- **Low level:** Pull-based decode loop. Consumer has full control.
+
+## Data Types
+
+Both API layers return the same `Transcript` type: text, timing, confidence, streaming state (`is_final`, `is_endpoint`, `segment_id`), and optional word-level detail. A `Word` struct provides per-word timing and confidence.
+
+<details>
+<summary>Struct definitions</summary>
 
 ```rust
 pub struct Transcript {
@@ -73,7 +81,10 @@ pub struct Word {
 }
 ```
 
-### Design Notes
+</details>
+
+<details>
+<summary>Design notes</summary>
 
 - `is_final` - "this result text won't be revised" (matches Deepgram/AWS `IsPartial: false`)
 - `is_endpoint` - "speaker paused/stopped, segment complete" (matches Deepgram `speech_final`, sherpa `is_endpoint()`)
@@ -83,14 +94,7 @@ pub struct Word {
 - `raw` preserves full backend response for debugging or accessing niche fields
 - Batch API should also return this type (with `is_final: true`, `is_endpoint: true` always)
 
-### Type Naming Strategy
-
-| Crate              | Type                  | Notes                                          |
-| ------------------ | --------------------- | ---------------------------------------------- |
-| `transcription-rs` | `Transcript`          | New rich type with streaming fields            |
-| `transcribe-rs`    | `TranscriptionResult` | Old type, preserved for backward compatibility |
-
-The name `Transcript` aligns with the new crate name (`transcription-rs`) and avoids collision with the deprecated type.
+</details>
 
 ### API Survey Reference
 
@@ -206,7 +210,7 @@ while stream.is_ready() {          // may loop 0+ times
 
 If we hide this loop and only return one result, **intermediate partials are lost**.
 
-### Convenience Helper
+### Convenience Helpers
 
 ```rust
 /// Drain all pending results from decoder (runs decode loop internally)
@@ -218,7 +222,14 @@ pub fn drain_results(decoder: &mut impl StreamingDecoder) -> Vec<Transcript> {
     }
     results
 }
+
+/// Concatenate transcript text with spaces
+pub fn joined_text(transcripts: &[Transcript]) -> String {
+    transcripts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" ")
+}
 ```
+
+`joined_text` replaces the old `TranscriptionResult.text` field. Also useful for streaming—accumulate transcripts and call `joined_text` to get the full text so far.
 
 ### Low-Level Usage
 

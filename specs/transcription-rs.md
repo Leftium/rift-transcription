@@ -176,9 +176,15 @@ impl Engine {
                 decoder.accept_waveform(&samples);
 
                 // Drain all results, send each to callback thread
-                for result in drain_results(&mut decoder) {
-                    if result_tx.send(Ok(result)).is_err() {
+                while decoder.is_ready() {
+                    if let Err(e) = decoder.decode() {
+                        let _ = result_tx.send(Err(e));
                         break;
+                    }
+                    if let Some(result) = decoder.get_result() {
+                        if result_tx.send(Ok(result)).is_err() {
+                            break;
+                        }
                     }
                 }
                 // Reset after segment boundary (not inside drain loop)
@@ -267,28 +273,9 @@ loop {
 // Signal end of stream, flush remaining audio
 decoder.input_finished();
 for result in drain_results(&mut decoder) {
-    println!("Final: {}", result.text);
+    println!("{}", result.text);
 }
 ```
-
-<details>
-<summary>Why a low-level API?</summary>
-
-One `accept_waveform` call can trigger **0, 1, or many** decode steps:
-
-```rust
-stream.accept_waveform(&samples);  // buffer audio
-
-while stream.is_ready() {          // may loop 0+ times
-    stream.decode();               // each call may update result
-    let result = stream.get_result();
-    // Handle intermediate result...
-}
-```
-
-If we hide this loop and only return one result, **intermediate partials are lost**.
-
-</details>
 
 <details>
 <summary>Convenience helpers</summary>
@@ -318,19 +305,80 @@ pub fn joined_text(transcripts: &[Transcript]) -> String {
 
 </details>
 
-### Error Handling
-
-| Error Source      | High Level                         | Low Level                         |
-| ----------------- | ---------------------------------- | --------------------------------- |
-| Decode fails      | Sent as `Err(e)` to callback       | Returns error from `decode()`     |
-| Consumer error    | Callback returns `Err`, loop stops | Consumer handles directly         |
-| End of stream     | `stop_listening()` signals end     | Consumer calls `input_finished()` |
-| Endpoint detected | Auto-reset on endpoint             | Consumer calls `reset()`          |
+### FAQ
 
 <details>
-<summary>Reference</summary>
+<summary>How does a consumer switch between online, sentence, or simulated streaming?</summary>
 
-### API Survey
+By choosing a backend. The streaming strategy is an implementation detail—all backends expose the same `StreamingDecoder` trait, so usage code is identical:
+
+```rust
+let engine = Engine::new(config)?;  // backend choice determines strategy
+engine.start_listening(callback)?;
+engine.push_audio(&samples);
+```
+
+| Strategy                                          | Implementation                                                                  |
+| ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Online streaming** (Sherpa/NeMo)                | Implements `StreamingDecoder` directly                                          |
+| **Sentence-based** (VAD)                          | Wrapper buffers until VAD signals end of speech, then calls batch transcription |
+| **Simulated streaming** (streaming-whisper style) | Wrapper with sliding window, returns partials via `StreamingDecoder`            |
+
+</details>
+
+<details>
+<summary>Why a low-level API?</summary>
+
+One `accept_waveform` call can trigger **0, 1, or many** decode steps:
+
+```rust
+stream.accept_waveform(&samples);  // buffer audio
+
+while stream.is_ready() {          // may loop 0+ times
+    stream.decode()?;              // each call may update result
+    if let Some(result) = stream.get_result() {
+        // Handle intermediate result...
+    }
+}
+```
+
+If we hide this loop and only return one result, **intermediate partials are lost**.
+
+</details>
+
+<details>
+<summary>Why <code>Fn</code> not <code>FnMut</code> for callbacks?</summary>
+
+`Fn` means the callback cannot mutate captured state. This works for forwarding (e.g., `app.emit()`). To accumulate results, use `Mutex<Vec<_>>` or a channel.
+
+</details>
+
+<details>
+<summary>What's the difference between <code>is_final</code> and <code>is_endpoint</code>?</summary>
+
+- `is_final` — "this text won't be revised". Use for UI display decisions (show as committed text).
+- `is_endpoint` — "speaker paused/stopped, segment complete". Use to trigger `reset()`.
+
+A result can be `is_final` without being `is_endpoint` (text is stable but speaker hasn't paused yet).
+
+</details>
+
+<details>
+<summary>How do errors propagate?</summary>
+
+| Error Source      | High Level                         | Low Level                            |
+| ----------------- | ---------------------------------- | ------------------------------------ |
+| Decode fails      | Sent as `Err(e)` to callback       | Returns error from `decode()`        |
+| Consumer error    | Callback returns `Err`, loop stops | Consumer handles directly            |
+| End of stream     | `stop_listening()` signals end     | Consumer calls `input_finished()`    |
+| Endpoint detected | Auto-reset after drain             | Consumer calls `reset()` after drain |
+
+</details>
+
+### Reference
+
+<details>
+<summary>API Survey</summary>
 
 | API            | Result Finality          | Endpoint Detection             | Word Confidence/Stability       |
 | -------------- | ------------------------ | ------------------------------ | ------------------------------- |
@@ -341,7 +389,10 @@ pub fn joined_text(transcripts: &[Transcript]) -> String {
 | Deepgram       | `is_final: bool`         | `speech_final: bool`           | `confidence`                    |
 | Google Cloud   | interim vs final         | natural pauses                 | `stability` score               |
 
-### Batch API Comparison
+</details>
+
+<details>
+<summary>Batch API Comparison</summary>
 
 **`transcription-rs`** (new crate):
 
@@ -365,7 +416,10 @@ fn transcribe_file(&mut self, path: &Path, ...) -> Result<TranscriptionResult, E
 | Return type   | `Vec<Transcript>`  | `TranscriptionResult` with nested `segments` |
 | Streaming     | Full support       | Not exposed                                  |
 
-### Wrapper Implementation
+</details>
+
+<details>
+<summary>Wrapper Implementation</summary>
 
 `transcribe-rs` internally depends on `transcription-rs` and transforms types:
 
@@ -409,15 +463,5 @@ impl TranscriptionEngine for WhisperEngine {
     }
 }
 ```
-
-### Comparison with Original Proposal
-
-| Aspect               | Original B++                    | Revised (`transcription-rs`)     |
-| -------------------- | ------------------------------- | -------------------------------- |
-| Result type          | `Partial(text)` / `Final(text)` | Rich `Transcript` struct         |
-| Layers               | High only                       | Low + High                       |
-| Intermediate results | Lost in decode loop             | All captured via `drain_results` |
-| `samples` param      | Unclear                         | `&[f32]` (borrow, not owned)     |
-| Backward compat      | Breaking change                 | `transcribe-rs` wrapper crate    |
 
 </details>

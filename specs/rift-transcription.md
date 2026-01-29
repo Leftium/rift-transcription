@@ -7,9 +7,11 @@
 
 ## Usage scenario
 
-1. Speak: `This is realtime transcription`
-2. Edit: select `realtime`, speak `fluid`
-3. Result: `This is fluid transcription`
+1. Speak words `This is realtime transcription`
+2. Select text `realtime`
+3. Speak word `fluid`
+
+**Result:** `This is fluid transcription`
 
 ### More Examples
 
@@ -17,10 +19,10 @@
 | ------------------- | ---------------------- | ------------------------------------------------------- | --------------------------- |
 | **Insert (voice)**  | Send the report        | 1. click after `the`<br>2. speak `quarterly`            | Send the _quarterly_ report |
 | **Insert (typed)**  | Call me tomorrow       | 1. click after `me`<br>2. type ` back`                  | Call me _back_ tomorrow     |
+| **Insert (mixed)**  | Yes                    | 1. type ` (`<br>2. speak `finally`<br>3. type `!)`      | Yes _(finally!)_            |
 | **Replace (voice)** | Meet at the cafe       | 1. select `cafe`<br>2. speak `library`                  | Meet at the _library_       |
 | **Fix homophone**   | Your welcome           | 1. select `Your welcome`<br>2. 🪄 Enhance Transcription | _You're welcome_            |
 | **Delete + voice**  | The very big dog       | 1. select `very big`<br>2. speak `small`                | The _small_ dog             |
-| **Format (mixed)**  | Yes                    | 1. type ` (`<br>2. speak `finally`<br>3. type `!)`      | Yes _(finally!)_            |
 | **Type then speak** |                        | 1. type `Svelte `\*<br>2. speak `component`             | _Svelte component_          |
 
 \*ASR often transcribes "Svelte" as "Belt", "Help", "Spelt", etc.

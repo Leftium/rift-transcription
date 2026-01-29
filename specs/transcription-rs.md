@@ -35,13 +35,6 @@ The new crate introduces `Transcript`; the deprecated crate keeps `Transcription
 
 </details>
 
-## API Layers
-
-Choose one:
-
-- **High level:** Push audio, receive callbacks. Library manages threading.
-- **Low level:** Pull-based decode loop. Consumer has full control.
-
 ## Data Types
 
 Both API layers return the same `Transcript` type: text, timing, confidence, streaming state (`is_final`, `is_endpoint`, `segment_id`), and optional word-level detail. A `Word` struct provides per-word timing and confidence.
@@ -96,7 +89,239 @@ pub struct Word {
 
 </details>
 
-### API Survey Reference
+## API Layers
+
+Choose one:
+
+- **[High Level](#high-level-callback-based-engine):** Push audio, receive callbacks. Library manages threading.
+- **[Low Level](#low-level-streamingdecoder-trait):** Pull-based decode loop. Consumer has full control.
+
+| Use Case                      | Layer | Why                             |
+| ----------------------------- | ----- | ------------------------------- |
+| Tauri app, simple integration | High  | No threading concerns           |
+| Custom buffering/timing       | Low   | Full control over decode loop   |
+| WebSocket server              | Low   | Need to manage multiple streams |
+| Testing/debugging             | Low   | Inspect each decode step        |
+
+### High Level: Callback-Based Engine
+
+Library owns threading. Consumer just pushes audio and receives callbacks.
+
+```rust
+impl Engine {
+    pub fn new(config: Config) -> Result<Self, Error>;
+
+    pub fn start_listening<F>(&self, callback: F) -> Result<(), Error>
+    where
+        F: Fn(Result<Transcript, Error>) -> Result<(), Error> + Send + 'static;
+
+    pub fn push_audio(&self, samples: &[f32]);
+
+    pub fn stop_listening(&self) -> Result<(), Error>;
+}
+```
+
+#### Usage (Tauri)
+
+```rust
+let engine = transcription_rs::Engine::new(config)?;
+
+engine.start_listening(|result| {
+    match result {
+        Ok(r) if r.is_final => app.emit("final", &r)?,
+        Ok(r) => app.emit("partial", &r.text)?,
+        Err(e) => app.emit("error", e.to_string())?,
+    }
+    Ok(())  // return Err to stop listening
+})?;
+
+// Called from Tauri's cpal audio callback
+engine.push_audio(&samples);
+
+// When done
+engine.stop_listening()?;
+```
+
+<details>
+<summary>Internal implementation</summary>
+
+High level is built on low level:
+
+```rust
+impl Engine {
+    pub fn start_listening<F>(&self, callback: F) -> Result<(), Error>
+    where
+        F: Fn(Result<Transcript, Error>) -> Result<(), Error> + Send + 'static
+    {
+        let (audio_tx, audio_rx) = channel();
+        let (result_tx, result_rx) = channel();
+
+        // Decode thread - uses low-level API
+        let mut decoder = self.create_decoder()?;
+        thread::spawn(move || {
+            loop {
+                let samples: Vec<f32> = match audio_rx.recv() {
+                    Ok(s) => s,
+                    Err(_) => {
+                        // Channel closed - flush remaining audio
+                        decoder.input_finished();
+                        for result in drain_results(&mut decoder) {
+                            let _ = result_tx.send(Ok(result));
+                        }
+                        break;
+                    }
+                };
+
+                decoder.accept_waveform(&samples);
+
+                // Drain ALL results, send each to callback thread
+                for result in drain_results(&mut decoder) {
+                    if result_tx.send(Ok(result)).is_err() {
+                        break;
+                    }
+                    if decoder.is_endpoint() {
+                        decoder.reset();
+                    }
+                }
+            }
+        });
+
+        // Callback thread
+        thread::spawn(move || {
+            for result in result_rx {
+                if callback(result).is_err() {
+                    break;
+                }
+            }
+        });
+
+        self.audio_tx = Some(audio_tx);
+        Ok(())
+    }
+}
+```
+
+**Thread Model:**
+
+```
+CONSUMER THREAD                 transcription-rs INTERNAL THREADS
+
+┌──────────────────┐           ┌──────────────────┐    ┌──────────────────┐
+│ cpal callback    │           │ Decode Thread    │    │ Callback Thread  │
+│                  │           │                  │    │                  │
+│ engine           │   chan    │ accept_waveform  │chan│ loop {           │
+│  .push_audio() ─────────────▶│ drain_results() ─────▶│   callback(r)   │
+│                  │           │ for each result  │    │ }                │
+└──────────────────┘           └──────────────────┘    └──────────────────┘
+                                                              │
+                                                              ▼
+                                                        app.emit()
+```
+
+</details>
+
+### Low Level: StreamingDecoder Trait
+
+Mirrors sherpa-onnx's actual API. Full control, consumer manages the decode loop.
+
+```rust
+pub trait StreamingDecoder {
+    fn accept_waveform(&mut self, samples: &[f32]);
+    fn input_finished(&mut self);  // signal end of stream, flush remaining frames
+    fn is_ready(&self) -> bool;
+    fn decode(&mut self);
+    fn get_result(&self) -> Transcript;
+    fn is_endpoint(&self) -> bool;
+    fn reset(&mut self);
+}
+```
+
+#### Usage
+
+```rust
+let mut decoder = SherpaDecoder::new(config)?;
+
+loop {
+    let samples = mic.read_chunk();
+    decoder.accept_waveform(&samples);
+
+    for result in drain_results(&mut decoder) {
+        if result.is_final {
+            println!("Final: {}", result.text);
+            decoder.reset();
+        } else {
+            print!("\rPartial: {}", result.text);
+        }
+    }
+
+    if user_stopped() {
+        break;
+    }
+}
+
+// Signal end of stream, flush remaining audio
+decoder.input_finished();
+for result in drain_results(&mut decoder) {
+    println!("Final: {}", result.text);
+}
+```
+
+<details>
+<summary>Why a low-level API?</summary>
+
+One `accept_waveform` call can trigger **0, 1, or many** decode steps:
+
+```rust
+stream.accept_waveform(&samples);  // buffer audio
+
+while stream.is_ready() {          // may loop 0+ times
+    stream.decode();               // each call may update result
+    let result = stream.get_result();
+    // Handle intermediate result...
+}
+```
+
+If we hide this loop and only return one result, **intermediate partials are lost**.
+
+</details>
+
+<details>
+<summary>Convenience helpers</summary>
+
+```rust
+/// Drain all pending results from decoder (runs decode loop internally)
+pub fn drain_results(decoder: &mut impl StreamingDecoder) -> Vec<Transcript> {
+    let mut results = vec![];
+    while decoder.is_ready() {
+        decoder.decode();
+        results.push(decoder.get_result());
+    }
+    results
+}
+
+/// Concatenate transcript text with spaces
+pub fn joined_text(transcripts: &[Transcript]) -> String {
+    transcripts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" ")
+}
+```
+
+`joined_text` replaces the old `TranscriptionResult.text` field. Also useful for streaming—accumulate transcripts and call `joined_text` to get the full text so far.
+
+</details>
+
+### Error Handling
+
+| Error Source      | High Level                             | Low Level                         |
+| ----------------- | -------------------------------------- | --------------------------------- |
+| Decode fails      | Sent as `Err(e)` to callback           | Returns error from `decode()`     |
+| Consumer error    | Callback returns `Err`, loop stops     | Consumer handles directly         |
+| End of stream     | `stop_listening()` calls it internally | Consumer calls `input_finished()` |
+| Endpoint detected | Auto-reset on endpoint                 | Consumer calls `reset()`          |
+
+<details>
+<summary>Reference</summary>
+
+### API Survey
 
 | API            | Result Finality          | Endpoint Detection             | Word Confidence/Stability       |
 | -------------- | ------------------------ | ------------------------------ | ------------------------------- |
@@ -176,234 +401,7 @@ impl TranscriptionEngine for WhisperEngine {
 }
 ```
 
----
-
-## Low Level: StreamingDecoder Trait
-
-Mirrors sherpa-onnx's actual API. Full control, consumer manages the decode loop.
-
-```rust
-pub trait StreamingDecoder {
-    fn accept_waveform(&mut self, samples: &[f32]);
-    fn input_finished(&mut self);  // signal end of stream, flush remaining frames
-    fn is_ready(&self) -> bool;
-    fn decode(&mut self);
-    fn get_result(&self) -> Transcript;
-    fn is_endpoint(&self) -> bool;
-    fn reset(&mut self);
-}
-```
-
-### Why Expose This?
-
-One `accept_waveform` call can trigger **0, 1, or many** decode steps:
-
-```rust
-stream.accept_waveform(&samples);  // buffer audio
-
-while stream.is_ready() {          // may loop 0+ times
-    stream.decode();               // each call may update result
-    let result = stream.get_result();
-    // Handle intermediate result...
-}
-```
-
-If we hide this loop and only return one result, **intermediate partials are lost**.
-
-### Convenience Helpers
-
-```rust
-/// Drain all pending results from decoder (runs decode loop internally)
-pub fn drain_results(decoder: &mut impl StreamingDecoder) -> Vec<Transcript> {
-    let mut results = vec![];
-    while decoder.is_ready() {
-        decoder.decode();
-        results.push(decoder.get_result());
-    }
-    results
-}
-
-/// Concatenate transcript text with spaces
-pub fn joined_text(transcripts: &[Transcript]) -> String {
-    transcripts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" ")
-}
-```
-
-`joined_text` replaces the old `TranscriptionResult.text` field. Also useful for streaming—accumulate transcripts and call `joined_text` to get the full text so far.
-
-### Low-Level Usage
-
-```rust
-let mut decoder = SherpaDecoder::new(config)?;
-
-loop {
-    let samples = mic.read_chunk();
-    decoder.accept_waveform(&samples);
-
-    for result in drain_results(&mut decoder) {
-        if result.is_final {
-            println!("Final: {}", result.text);
-            decoder.reset();
-        } else {
-            print!("\rPartial: {}", result.text);
-        }
-    }
-
-    if user_stopped() {
-        break;
-    }
-}
-
-// Signal end of stream, flush remaining audio
-decoder.input_finished();
-for result in drain_results(&mut decoder) {
-    println!("Final: {}", result.text);
-}
-```
-
----
-
-## High Level: Callback-Based Engine
-
-Library owns threading. Consumer just pushes audio and receives callbacks.
-
-```rust
-impl Engine {
-    pub fn new(config: Config) -> Result<Self, Error>;
-
-    pub fn start_listening<F>(&self, callback: F) -> Result<(), Error>
-    where
-        F: Fn(Result<Transcript, Error>) -> Result<(), Error> + Send + 'static;
-
-    pub fn push_audio(&self, samples: &[f32]);
-
-    pub fn stop_listening(&self) -> Result<(), Error>;
-}
-```
-
-### High-Level Usage (Tauri)
-
-```rust
-let engine = transcription_rs::Engine::new(config)?;
-
-engine.start_listening(|result| {
-    match result {
-        Ok(r) if r.is_final => app.emit("final", &r)?,
-        Ok(r) => app.emit("partial", &r.text)?,
-        Err(e) => app.emit("error", e.to_string())?,
-    }
-    Ok(())  // return Err to stop listening
-})?;
-
-// Called from Tauri's cpal audio callback
-engine.push_audio(&samples);
-
-// When done
-engine.stop_listening()?;
-```
-
-### Internal Implementation
-
-High level is built on low level:
-
-```rust
-impl Engine {
-    pub fn start_listening<F>(&self, callback: F) -> Result<(), Error>
-    where
-        F: Fn(Result<Transcript, Error>) -> Result<(), Error> + Send + 'static
-    {
-        let (audio_tx, audio_rx) = channel();
-        let (result_tx, result_rx) = channel();
-
-        // Decode thread - uses low-level API
-        let mut decoder = self.create_decoder()?;
-        thread::spawn(move || {
-            loop {
-                let samples: Vec<f32> = match audio_rx.recv() {
-                    Ok(s) => s,
-                    Err(_) => {
-                        // Channel closed - flush remaining audio
-                        decoder.input_finished();
-                        for result in drain_results(&mut decoder) {
-                            let _ = result_tx.send(Ok(result));
-                        }
-                        break;
-                    }
-                };
-
-                decoder.accept_waveform(&samples);
-
-                // Drain ALL results, send each to callback thread
-                for result in drain_results(&mut decoder) {
-                    if result_tx.send(Ok(result)).is_err() {
-                        break;
-                    }
-                    if decoder.is_endpoint() {
-                        decoder.reset();
-                    }
-                }
-            }
-        });
-
-        // Callback thread
-        thread::spawn(move || {
-            for result in result_rx {
-                if callback(result).is_err() {
-                    break;
-                }
-            }
-        });
-
-        self.audio_tx = Some(audio_tx);
-        Ok(())
-    }
-}
-```
-
----
-
-## Thread Model (High Level)
-
-```
-CONSUMER THREAD                 transcription-rs INTERNAL THREADS
-
-┌──────────────────┐           ┌──────────────────┐    ┌──────────────────┐
-│ cpal callback    │           │ Decode Thread    │    │ Callback Thread  │
-│                  │           │                  │    │                  │
-│ engine           │   chan    │ accept_waveform  │chan│ loop {           │
-│  .push_audio() ─────────────▶│ drain_results() ─────▶│   callback(r)   │
-│                  │           │ for each result  │    │ }                │
-└──────────────────┘           └──────────────────┘    └──────────────────┘
-                                                              │
-                                                              ▼
-                                                        app.emit()
-```
-
----
-
-## Error Handling
-
-| Error Source      | Low Level                         | High Level                             |
-| ----------------- | --------------------------------- | -------------------------------------- |
-| Decode fails      | Returns error from `decode()`     | Sent as `Err(e)` to callback           |
-| Consumer error    | Consumer handles directly         | Callback returns `Err`, loop stops     |
-| End of stream     | Consumer calls `input_finished()` | `stop_listening()` calls it internally |
-| Endpoint detected | Consumer calls `reset()`          | Auto-reset on endpoint                 |
-
----
-
-## Choosing a Layer
-
-| Use Case                      | Layer | Why                             |
-| ----------------------------- | ----- | ------------------------------- |
-| Tauri app, simple integration | High  | No threading concerns           |
-| Custom buffering/timing       | Low   | Full control over decode loop   |
-| WebSocket server              | Low   | Need to manage multiple streams |
-| Testing/debugging             | Low   | Inspect each decode step        |
-
----
-
-## Comparison with Original Proposal
+### Comparison with Original Proposal
 
 | Aspect               | Original B++                    | Revised (`transcription-rs`)     |
 | -------------------- | ------------------------------- | -------------------------------- |
@@ -412,3 +410,5 @@ CONSUMER THREAD                 transcription-rs INTERNAL THREADS
 | Intermediate results | Lost in decode loop             | All captured via `drain_results` |
 | `samples` param      | Unclear                         | `&[f32]` (borrow, not owned)     |
 | Backward compat      | Breaking change                 | `transcribe-rs` wrapper crate    |
+
+</details>

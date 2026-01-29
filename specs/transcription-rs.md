@@ -37,7 +37,7 @@ The new crate introduces `Transcript`; the deprecated crate keeps `Transcription
 
 ## Data Types
 
-Both API layers return the same `Transcript` type: text, timing, confidence, streaming state (`is_final`, `is_endpoint`, `segment_id`), and optional word-level detail. A `Word` struct provides per-word timing and confidence.
+Both API layers return the same `Transcript` type: text, timing, confidence, finality flags (`is_final`, `is_endpoint`, `segment_id`), and optional word-level detail. A `Word` struct provides per-word timing and confidence.
 
 <details>
 <summary>Struct definitions</summary>
@@ -79,13 +79,14 @@ pub struct Word {
 <details>
 <summary>Design notes</summary>
 
-- `is_final` - "this result text won't be revised" (matches Deepgram/AWS `IsPartial: false`)
-- `is_endpoint` - "speaker paused/stopped, segment complete" (matches Deepgram `speech_final`, sherpa `is_endpoint()`)
+- `is_final` - "this result text won't be revised" (matches Deepgram/AWS `IsPartial: false`). Use for UI display decisions.
+- `is_endpoint` - "speaker paused/stopped, segment complete" (matches Deepgram `speech_final`, sherpa `is_endpoint()`). Use to trigger `reset()`.
+- After `input_finished()`, drain until `is_ready()` returns false. `get_result()` returns `None` when no result is available.
 - `segment_id` correlates partial updates with their final result
 - `words` replaces both `tokens` and `timestamps` arrays - richer, aligned with cloud APIs
 - `confidence` at word level: serves as both model certainty and stability indicator. Backends with boolean `Stable` map to `1.0`/`0.5`
 - `raw` preserves full backend response for debugging or accessing niche fields
-- Batch API should also return this type (with `is_final: true`, `is_endpoint: true` always)
+- Batch API returns this type (with `is_final: true`, `is_endpoint: true` always)
 
 </details>
 
@@ -174,14 +175,15 @@ impl Engine {
 
                 decoder.accept_waveform(&samples);
 
-                // Drain ALL results, send each to callback thread
+                // Drain all results, send each to callback thread
                 for result in drain_results(&mut decoder) {
                     if result_tx.send(Ok(result)).is_err() {
                         break;
                     }
-                    if decoder.is_endpoint() {
-                        decoder.reset();
-                    }
+                }
+                // Reset after segment boundary (not inside drain loop)
+                if decoder.is_endpoint() {
+                    decoder.reset();
                 }
             }
         });
@@ -195,7 +197,7 @@ impl Engine {
             }
         });
 
-        self.audio_tx = Some(audio_tx);
+        *self.audio_tx.lock().unwrap() = Some(audio_tx);  // audio_tx: Mutex<Option<Sender>>
         Ok(())
     }
 }
@@ -229,8 +231,8 @@ pub trait StreamingDecoder {
     fn accept_waveform(&mut self, samples: &[f32]);
     fn input_finished(&mut self);  // signal end of stream, flush remaining frames
     fn is_ready(&self) -> bool;
-    fn decode(&mut self);
-    fn get_result(&self) -> Transcript;
+    fn decode(&mut self) -> Result<(), Error>;
+    fn get_result(&self) -> Option<Transcript>;
     fn is_endpoint(&self) -> bool;
     fn reset(&mut self);
 }
@@ -248,10 +250,13 @@ loop {
     for result in drain_results(&mut decoder) {
         if result.is_final {
             println!("Final: {}", result.text);
-            decoder.reset();
         } else {
             print!("\rPartial: {}", result.text);
         }
+    }
+    // Reset after segment boundary (not inside drain loop)
+    if decoder.is_endpoint() {
+        decoder.reset();
     }
 
     if user_stopped() {
@@ -293,8 +298,12 @@ If we hide this loop and only return one result, **intermediate partials are los
 pub fn drain_results(decoder: &mut impl StreamingDecoder) -> Vec<Transcript> {
     let mut results = vec![];
     while decoder.is_ready() {
-        decoder.decode();
-        results.push(decoder.get_result());
+        if decoder.decode().is_err() {
+            break;
+        }
+        if let Some(result) = decoder.get_result() {
+            results.push(result);
+        }
     }
     results
 }
@@ -311,12 +320,12 @@ pub fn joined_text(transcripts: &[Transcript]) -> String {
 
 ### Error Handling
 
-| Error Source      | High Level                             | Low Level                         |
-| ----------------- | -------------------------------------- | --------------------------------- |
-| Decode fails      | Sent as `Err(e)` to callback           | Returns error from `decode()`     |
-| Consumer error    | Callback returns `Err`, loop stops     | Consumer handles directly         |
-| End of stream     | `stop_listening()` calls it internally | Consumer calls `input_finished()` |
-| Endpoint detected | Auto-reset on endpoint                 | Consumer calls `reset()`          |
+| Error Source      | High Level                         | Low Level                         |
+| ----------------- | ---------------------------------- | --------------------------------- |
+| Decode fails      | Sent as `Err(e)` to callback       | Returns error from `decode()`     |
+| Consumer error    | Callback returns `Err`, loop stops | Consumer handles directly         |
+| End of stream     | `stop_listening()` signals end     | Consumer calls `input_finished()` |
+| Endpoint detected | Auto-reset on endpoint             | Consumer calls `reset()`          |
 
 <details>
 <summary>Reference</summary>

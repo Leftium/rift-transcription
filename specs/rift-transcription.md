@@ -367,13 +367,15 @@ RIFT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
 ## Transcription Backends
 
-Three backends with different tradeoffs:
+Five backends with different tradeoffs:
 
-| Backend               | Purpose                               | Latency             | Accuracy  | Setup         |
-| --------------------- | ------------------------------------- | ------------------- | --------- | ------------- |
-| **Web Speech API**    | Zero-config demo, broad compatibility | Medium (~300-500ms) | Good      | None          |
-| **Sherpa**            | Research, optimal latency             | Low (~100-200ms)    | Good      | Local install |
-| **ElevenLabs Scribe** | Production accuracy                   | Higher (~500ms+)    | Excellent | API key       |
+| Backend               | Purpose                               | Latency             | Accuracy        | Setup         | Price       |
+| --------------------- | ------------------------------------- | ------------------- | --------------- | ------------- | ----------- |
+| **Web Speech API**    | Zero-config demo, broad compatibility | Medium (~300-500ms) | Good            | None          | Free        |
+| **Sherpa**            | Research, optimal latency, offline    | Low (~100-200ms)    | Good (~4-6%)    | Local install | Free        |
+| **Soniox v4**         | Production streaming, best RIFT fit   | Very low (<100ms)   | Excellent       | API key       | $0.002/min  |
+| **Voxtral Realtime**  | Production streaming, best value      | Very low (<200ms)   | Excellent (~4%) | API key       | $0.006/min  |
+| **ElevenLabs Scribe** | Production accuracy, most languages   | Low (~150ms)        | Excellent (~6%) | API key       | ~$0.015/min |
 
 ### Web Speech API
 
@@ -430,9 +432,80 @@ type SherpaBackend = {
 
 **Best for:** Research, latency-sensitive use cases, privacy-conscious users.
 
+### Soniox v4 Real-Time
+
+Cloud API purpose-built for low-latency voice interactions. Best fit for RIFT's architecture.
+
+```typescript
+type SonioxBackend = {
+	type: 'soniox';
+	apiKey: string;
+	model: 'stt-rt-v4';
+	enableEndpointDetection?: boolean;
+	maxEndpointDelayMs?: number; // configurable latency-accuracy tradeoff
+};
+```
+
+**Key features:**
+
+- **Token-level `is_final` streaming** — individual tokens arrive with `is_final` flags, not full-transcript replacements. Maps naturally to ProseMirror's per-word marks.
+- **Manual finalization** — send `"type": "finalize"` over WebSocket, get high-accuracy finals in milliseconds. Ideal for RIFT's cursor interrupt / utterance draining.
+- **Semantic endpointing** — understands context, rhythm, and intent (not just silence detection). Configurable via `max_endpoint_delay_ms`. Won't cut off a user reading a phone number.
+- **60+ languages** with single multilingual model, automatic language detection, speaker diarization
+- **Real-time translation** — transcribe and translate simultaneously in a single stream (3,600+ language pairs)
+- **Context/domain adaptation** — structured context (domain, topic, terms) sent at connection time
+
+**Pricing:** ~$0.12/hour ($0.002/min) — cheapest cloud streaming option.
+
+**WebSocket URL:** `wss://stt-rt.soniox.com/transcribe-websocket`
+
+**Audio formats:** Auto-detected (aac, flac, mp3, ogg, wav, webm) or raw PCM/μ-law/A-law.
+
+**Why best fit for RIFT:**
+
+1. `finalize()` returns millisecond-latency finals (vs Web Speech's stop+restart hack)
+2. Semantic endpointing maps to `isEndpoint` — understands thought completion, not just silence
+3. Token-level streaming is closer to word-level ProseMirror operations than transcript-level replacements
+4. Speaker diarization available in real-time (not batch-only like Voxtral)
+
+**Best for:** Production RIFT deployment where cursor interrupts and semantic endpointing matter.
+
+### Voxtral Realtime (Mistral)
+
+Cloud API with best price/performance ratio. Native streaming architecture (not chunked batch).
+
+```typescript
+type VoxtralBackend = {
+	type: 'voxtral';
+	apiKey: string;
+	mode: 'streaming' | 'batch';
+	latencyMode?: 'fast' | 'balanced' | 'accurate'; // configurable latency-accuracy tradeoff
+};
+```
+
+**Streaming mode:** Real-time via WebSocket, sub-200ms latency (configurable down to ~200ms for speed or ~2.4s for batch-equivalent accuracy).
+
+**Batch mode:** Voxtral Mini Transcribe V2 at $0.003/min with speaker diarization and context biasing.
+
+**Key features:**
+
+- ~4% WER on FLEURS benchmark (state-of-the-art)
+- 13 languages (EN, ZH, HI, ES, AR, FR, PT, RU, DE, JA, KO, IT, NL)
+- Word-level timestamps (segment granularity)
+- **Open weights available** (Apache 2.0) — future self-hosting possible
+- GDPR/HIPAA compliant deployments
+
+**Limitations:**
+
+- No realtime diarization (batch only)
+- Context biasing English-optimized
+- Fewer languages than ElevenLabs (13) or Soniox (60+)
+
+**Best for:** Production streaming when cost matters, future self-hosting path.
+
 ### ElevenLabs Scribe
 
-Cloud API with state-of-the-art accuracy. Two modes:
+Cloud API with broadest language support. Two modes:
 
 ```typescript
 type ScribeBackend = {
@@ -442,11 +515,18 @@ type ScribeBackend = {
 };
 ```
 
-**Streaming mode:** Real-time via WebSocket, similar latency profile to Sherpa.
+**Streaming mode:** Real-time via WebSocket, <150ms latency with predictive transcription.
 
 **Batch mode:** Upload audio, get polished transcript. Higher accuracy, higher latency.
 
-**Best for:** Production use, when accuracy matters more than latency.
+**Key features:**
+
+- ~6.5% WER across 90+ languages
+- Automatic language detection and code-switching
+- Up to 48 speakers diarization (batch)
+- Entity detection for compliance (56 categories)
+
+**Best for:** Production use when language coverage or diarization matters.
 
 ### Unified Interface
 
@@ -464,7 +544,7 @@ type TranscriptionError = ReturnType<typeof TranscriptionError>;
 
 // Backend interface
 interface TranscriptionBackend {
-	readonly name: string; // 'sherpa' | 'scribe' | 'web-speech'
+	readonly name: string; // 'web-speech' | 'sherpa' | 'soniox' | 'voxtral' | 'scribe'
 
 	start(): Result<void, TranscriptionError>;
 	stop(): Result<void, TranscriptionError>;
@@ -504,20 +584,26 @@ type Word = {
 
 **Backend capability matrix:**
 
-| Field         | Web Speech           | Sherpa | Scribe |
-| ------------- | -------------------- | ------ | ------ |
-| `text`        | ✓                    | ✓      | ✓      |
-| `isFinal`     | ✓                    | ✓      | ✓      |
-| `isEndpoint`  | forced only          | ✓      | ✓      |
-| `segmentId`   | ✓ (client-generated) | ✓      | ✓      |
-| `start`/`end` | ✗                    | ✓      | ✓      |
-| `words`       | ✗                    | ✓      | ✓      |
-| `confidence`  | ✗                    | ✓      | ✓      |
+| Field         | Web Speech           | Sherpa | Soniox v4      | Voxtral | Scribe  |
+| ------------- | -------------------- | ------ | -------------- | ------- | ------- |
+| `text`        | ✓                    | ✓      | ✓              | ✓       | ✓       |
+| `isFinal`     | ✓                    | ✓      | ✓ (per-token)  | ✓       | ✓       |
+| `isEndpoint`  | forced only          | ✓      | ✓ (semantic)   | ✓       | ✓       |
+| `segmentId`   | ✓ (client-generated) | ✓      | ✓              | ✓       | ✓       |
+| `start`/`end` | ✗                    | ✓      | ✓              | ✓       | ✓       |
+| `words`       | ✗                    | ✓      | ✓ (tokens)     | segment | ✓       |
+| `confidence`  | ✗                    | ✓      | ?              | ?       | ✓       |
+| `finalize`    | fake (stop+restart)  | ✓      | ✓ (ms-latency) | ✓       | ✓       |
+| Languages     | browser-dependent    | 10+    | 60+            | 13      | 90+     |
+| Diarization   | ✗                    | ✓      | ✓ (real-time)  | batch   | batch   |
+| Price/min     | free                 | free   | $0.002         | $0.006  | ~$0.015 |
 
 **Notes:**
 
 - Web Speech API's `finalize()` implemented as stop + restart (higher latency)
 - Web Speech lacks timing/word data—utterance tracker treats full transcript as single segment
+- Soniox streams individual tokens with `is_final` flags (not full-transcript replacements)
+- Voxtral provides segment-level timestamps; word-level granularity TBD
 - Uses WellCrafted Result type for explicit error handling
 
 ### Backend Selection Logic
@@ -534,7 +620,17 @@ function detectBackend(): Result<TranscriptionBackend, BackendError> {
 		return Ok(createSherpaBackend(config));
 	}
 
-	// Prefer Scribe if API key configured
+	// Prefer Soniox if API key configured (best RIFT fit: finalize + semantic endpointing)
+	if (config.sonioxApiKey) {
+		return Ok(createSonioxBackend(config));
+	}
+
+	// Prefer Voxtral if API key configured (best price/performance)
+	if (config.voxtralApiKey) {
+		return Ok(createVoxtralBackend(config));
+	}
+
+	// Prefer Scribe if API key configured (most languages)
 	if (config.scribeApiKey) {
 		return Ok(createScribeBackend(config));
 	}
@@ -559,8 +655,10 @@ function selectBackend(config: Config): Result<TranscriptionBackend, BackendErro
 **Priority order:**
 
 1. Sherpa (if available) — best latency, offline, no API costs
-2. Scribe (if API key configured) — best accuracy
-3. Web Speech API — zero-config fallback
+2. Soniox (if API key configured) — best RIFT fit (ms-finalize, semantic endpointing, token streaming)
+3. Voxtral (if API key configured) — best price/performance, future self-hosting
+4. Scribe (if API key configured) — most languages, code-switching
+5. Web Speech API — zero-config fallback
 
 ### Hot-Swapping Backends
 
@@ -679,7 +777,7 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 
 ## Planned Tech Stack
 
-- **Transcription** — Web Speech API (demo) / Sherpa (research) / Scribe (production)
+- **Transcription** — Web Speech API (demo) / Sherpa (research) / Soniox v4 (production, best RIFT fit) / Voxtral (value) / Scribe (languages)
 - **ElevenLabs TTS** — Synthesize typed text, potentially voice-cloned
 
 ---
@@ -1024,34 +1122,59 @@ They support multiple speakers per document via `paragraph_start.speaker`. The U
 
 ## Implementation Order
 
-Start with **Web Speech API**, then add Sherpa:
+Start with **Web Speech API**, then add production backends:
 
-| Phase | Backend    | Why                                                    |
-| ----- | ---------- | ------------------------------------------------------ |
-| 1     | Web Speech | Zero setup, fast iteration, proves architecture        |
-| 2     | Sherpa     | Adds word timestamps, real `finalize`, offline support |
-| 3     | Scribe     | Production accuracy, batch re-transcription            |
+| Phase | Backend    | Why                                                      |
+| ----- | ---------- | -------------------------------------------------------- |
+| 1     | Web Speech | Zero setup, fast iteration, proves architecture          |
+| 2     | Sherpa     | Adds word timestamps, real `finalize`, offline support   |
+| 3a    | Soniox     | Best RIFT fit: ms-finalize, semantic endpointing, tokens |
+| 3b    | Voxtral    | Alternative: best price/performance (~$0.006/min)        |
+| 3c    | Scribe     | Alternative if 90+ languages or diarization needed       |
 
 **Why Web Speech first:**
 
 - **5 lines to first result** — no WASM loading, no model downloads
-- **No server required** — Sherpa/Scribe WebSocket APIs work but need a running server
+- **No server required** — Sherpa/Soniox/Voxtral/Scribe WebSocket APIs work but need audio capture setup
 - **Handles its own audio** — Web Speech connects directly to mic; other APIs need audio capture (`getUserMedia` → `AudioWorklet` → WebSocket). Doesn't affect our unified `Transcript` interface, but adds implementation work.
 - **Architecture is backend-agnostic** — Sherpa adds optional fields (`words[]`, `confidence`), doesn't change shape
 - **Becomes the fallback anyway** — work isn't thrown away
 
+**Why Soniox for Phase 3a:**
+
+- **Manual finalization in milliseconds** — send `finalize`, get high-accuracy finals instantly. Critical for RIFT's cursor interrupt flow where latency during utterance draining directly impacts UX.
+- **Semantic endpointing** — understands thought completion, not just silence. Prevents premature cuts during phone numbers, addresses, deliberate pauses. Configurable via `max_endpoint_delay_ms`.
+- **Token-level `is_final` streaming** — individual tokens arrive with finality flags, mapping naturally to ProseMirror's per-word marks. Other APIs send full-transcript replacements.
+- **Cheapest cloud streaming** — ~$0.002/min vs $0.006 (Voxtral) and ~$0.015 (Scribe)
+- **60+ languages** with real-time diarization and translation
+
+**When to use Voxtral instead:**
+
+- Need open weights / self-hosting path (Apache 2.0)
+- Want configurable latency-accuracy tradeoff at runtime
+
+**When to use Scribe instead:**
+
+- Need 90+ languages (Soniox: 60+, Voxtral: 13)
+- Need automatic code-switching
+- Already using ElevenLabs for TTS
+
 **Risk is low** because:
 
-- Sherpa's richer API adds fields, doesn't change the `Transcript` type shape
+- All backends implement the same `Transcript` type shape
 - The hard part (cursor interrupt, draining, timestamp filtering) is backend-agnostic
 - `finalize` behavioral difference (Web Speech fakes via stop+restart) doesn't affect utterance tracker logic
 
 ## Open Questions / Next Steps
 
-- Test latency of force-endpoint across different ASR APIs (Sherpa, ElevenLabs Scribe)
+- Test latency of force-endpoint across different ASR APIs (Sherpa, Soniox, Voxtral, ElevenLabs Scribe)
 - Handle Web Speech API's lack of word timestamps gracefully
 - Visual treatment of interim text (underline style, fading)
 - How corrections feed back to ASR (contextual biasing / personal dictionary)
+- Evaluate Soniox's `context` feature (domain, topic, terms) for domain adaptation during streaming
+- Test Soniox semantic endpointing vs acoustic VAD for RIFT's cursor interrupt timing
+- Benchmark Soniox token-level streaming vs Scribe/Voxtral transcript-level for ProseMirror integration
 - File format for persistence (consider Audapolis ZIP format as starting point)
 - Experiment with different commit triggers and timing thresholds
 - Consider OTIO (OpenTimelineIO) export for interop with video editors
+- Monitor community tooling for Voxtral self-hosting (sherpa-onnx integration, etc.)

@@ -132,6 +132,110 @@ Scribe v2 Realtime is available via the **ElevenLabs API** and is integrated int
 
 ---
 
+## 3b. Voxtral Transcribe 2 (Mistral): Capabilities and Metrics
+
+### 3b.1. Model Overview and Architecture
+
+Voxtral Transcribe 2 is Mistral's next-generation speech-to-text offering, released in early 2026. The family includes two models:
+
+- **Voxtral Mini Transcribe V2** — Batch transcription with diarization and context biasing
+- **Voxtral Realtime** — Live streaming with configurable latency-accuracy tradeoff
+
+Voxtral Realtime uses a **novel streaming architecture** that transcribes audio as it arrives, rather than adapting offline models by processing audio in chunks. This purpose-built approach enables configurable latency down to sub-200ms while maintaining near-batch accuracy.
+
+The 4B parameter Voxtral Realtime model is released under **Apache 2.0** open weights, enabling edge deployment for privacy-sensitive applications.
+
+### 3b.2. Latency and Real-Time Performance
+
+Voxtral Realtime achieves **configurable latency from sub-200ms to 2.4 seconds**, allowing developers to tune the latency-accuracy tradeoff at runtime:
+
+- **~200ms delay** — For voice agents and real-time applications, stays within 1-2% WER of batch accuracy
+- **~480ms delay** — Balanced mode for most streaming applications
+- **~2.4s delay** — Matches Voxtral Mini Transcribe V2 batch accuracy, ideal for subtitling
+
+### 3b.3. Word Error Rate (WER) and Accuracy
+
+Voxtral achieves **state-of-the-art accuracy at the lowest price point**:
+
+- **~4% WER** on FLEURS benchmark across supported languages
+- Outperforms GPT-4o Mini Transcribe, Gemini 2.5 Flash, AssemblyAI Universal, and Deepgram Nova on accuracy
+- Processes audio ~3x faster than ElevenLabs Scribe v2 while matching quality at 1/5 the cost
+
+### 3b.4. Multilingual Capabilities
+
+Voxtral supports **13 languages** natively: English, Chinese, Hindi, Spanish, Arabic, French, Portuguese, Russian, German, Japanese, Korean, Italian, and Dutch.
+
+### 3b.5. Deployment Options
+
+- **Cloud API:** $0.003/min (batch), $0.006/min (realtime)
+- **Open weights:** Voxtral Realtime available on [Hugging Face](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) under Apache 2.0
+- **Edge deployment:** 4B parameter footprint runs efficiently on edge devices
+
+---
+
+## 3c. Soniox v4 Real-Time: Capabilities and Metrics
+
+### 3c.1. Model Overview and Architecture
+
+Soniox v4 Real-Time is a speech recognition model purpose-built for low-latency voice interactions, released February 2026. Unlike traditional STT systems that trade accuracy for speed, Soniox v4 delivers speaker-native accuracy across 60+ languages simultaneously.
+
+The model is designed for mission-critical voice agents, live captioning, and real-time global communication. It introduces several architectural innovations that differentiate it from competing approaches.
+
+### 3c.2. Latency and Real-Time Performance
+
+Soniox v4 delivers **industry-leading low latency for final transcriptions**, producing high-accuracy final text just milliseconds after speech ends. Key latency features:
+
+- **Token-level streaming:** Results arrive as individual tokens with `is_final` flags, not full-transcript replacements. Non-final tokens appear instantly and refine until stabilized into final tokens.
+- **Manual finalization:** Send a `finalize` command over WebSocket to force all pending tokens to finalize immediately with millisecond-latency response. Critical for push-to-talk, client-side VAD, and segment-based pipelines.
+- **Audio progress tracking:** Each response includes `audio_final_proc_ms` and `audio_total_proc_ms` for precise progress measurement.
+
+### 3c.3. Semantic Endpointing
+
+Soniox v4 introduces **semantic endpointing** — a significant advance over traditional acoustic VAD:
+
+- **Traditional VAD:** Listens for silence, cuts audio when pause exceeds threshold. Interrupts users reading phone numbers, addresses, or thinking mid-sentence.
+- **Semantic endpointing:** The model understands context, rhythm, and intent. Detects real conversational finality rather than just silence.
+- **Configurable:** `max_endpoint_delay_ms` controls the maximum wait time after speech ends, allowing tuning between fast turn-taking and patient waiting.
+
+### 3c.4. Word Error Rate (WER) and Accuracy
+
+Soniox v4 reaches **speaker-native accuracy across 60+ languages simultaneously**, with equalized product experience across every supported language. Specific WER benchmarks not yet independently published, but Soniox provides a transparent [open-source comparison framework](https://github.com/soniox/soniox-compare) for head-to-head testing.
+
+### 3c.5. Multilingual Capabilities
+
+- **60+ languages** with a single multilingual model (no per-language model selection)
+- **Automatic language detection** and identification per token
+- **Code-switching** support for mixed-language conversations
+- **Real-time translation** in a single stream across 3,600+ language pairs
+
+### 3c.6. Speaker Diarization
+
+Speaker diarization is available in **real-time streaming mode**, with per-token speaker labels. This is a differentiator — most competitors (Voxtral, ElevenLabs Scribe) offer diarization only in batch mode.
+
+### 3c.7. Domain Adaptation and Context
+
+Soniox supports structured context sent at connection time:
+
+- **General context:** Key-value pairs for domain, topic, speaker names, organization
+- **Text context:** Descriptive text to prime the model
+- **Terms:** List of domain-specific vocabulary (proper nouns, medications, technical terms)
+- **Translation terms:** Source-target pairs for translation consistency
+
+### 3c.8. Deployment Options
+
+- **Cloud API:** WebSocket at `wss://stt-rt.soniox.com/transcribe-websocket`
+- **Pricing:** ~$0.12/hour (~$0.002/min) — cheapest cloud streaming option
+- **Audio formats:** Auto-detected (aac, flac, mp3, ogg, wav, webm) or raw PCM/μ-law/A-law
+- **Session limits:** Up to 5 hours continuous streaming
+- **Security:** SOC 2 Type II, HIPAA, GDPR compliant
+- **Sovereign Cloud:** In-region processing for data residency requirements
+
+### 3c.9. Open-Source Comparison Framework
+
+Soniox provides an [open-source comparison framework](https://github.com/soniox/soniox-compare) that benchmarks Soniox against OpenAI, Google, Azure, Speechmatics, Deepgram, and AssemblyAI — all using real API calls on the same audio. Available as a live tool at https://soniox.com/compare/.
+
+---
+
 ## 4. Sherpa-ONNX (Open-Source): Models, Streaming, and Deployment
 
 ### 4.1. Toolkit Overview
@@ -428,29 +532,40 @@ Reducing latency often comes at the cost of accuracy, as models have less contex
 
 ## 15. Comparison Table: Top Real-Time Streaming ASR Models and APIs (Early 2026)
 
-| Model/API                | Type         | Latency (ms) | WER (%) | Languages | Diarization | Domain Adaptation | Deployment Options         | Open Source |
-|--------------------------|--------------|--------------|---------|-----------|-------------|-------------------|---------------------------|-------------|
-| Deepgram Nova-3          | Commercial   | <300         | ~6.8    | 36+       | Add-on      | Keyterm, Custom   | Cloud, On-prem, Edge      | No          |
-| ElevenLabs Scribe v2 RT  | Commercial   | <150         | ~6.5    | 90+       | Optional    | Keyterm (Batch)   | Cloud API, Agents         | No          |
-| Sherpa-ONNX (Zipformer)  | Open-source  | 100–300      | ~4–6    | 10+       | Yes         | Prompt-tuning     | Self-hosted, Edge, WASM   | Yes         |
-| AssemblyAI Universal-2   | Commercial   | 300–600      | ~14.5   | 102       | Add-on      | Custom vocab      | Cloud API                 | No          |
-| Google Chirp             | Commercial   | 200–500      | ~11.6   | 125+      | Yes         | Phrase hints      | Cloud, On-prem            | No          |
-| AWS Transcribe           | Commercial   | 200–400      | ~14     | 100+      | Add-on      | Custom vocab      | Cloud, Edge (Greengrass)  | No          |
-| Microsoft Azure Speech   | Commercial   | 200–500      | ~17     | 100+      | Yes         | Phrase lists      | Cloud, On-device, Hybrid  | No          |
-| Whisper Large V3         | Open-source  | 200–500      | ~7.4    | 99+       | No*         | Fine-tuning       | Self-hosted, Edge         | Yes         |
-| Canary Qwen 2.5B         | Open-source  | 100–300      | ~5.6    | English   | No          | LLM decoder       | Self-hosted               | Yes         |
-| Omnilingual ASR          | Open-source  | ~1000        | <10 CER | 1,600+    | No          | Zero-shot         | Self-hosted               | Yes         |
-| Parakeet TDT             | Open-source  | <100         | ~8      | English   | No          | Fast streaming    | Self-hosted, Edge         | Yes         |
+| Model/API               | Type        | Latency (ms) | WER (%) | Languages | Diarization | Domain Adaptation | Deployment Options       | Open Source | Price/min |
+| ----------------------- | ----------- | ------------ | ------- | --------- | ----------- | ----------------- | ------------------------ | ----------- | --------- |
+| **Soniox v4 RT**        | Commercial  | <100         | TBD\*\* | 60+       | Yes (RT)    | Context, Terms    | Cloud, Sovereign         | No          | $0.002    |
+| **Voxtral Realtime**    | Commercial  | <200         | ~4      | 13        | No\*\*\*    | Context (Batch)   | Cloud, Edge, Self-host   | **Yes**     | $0.006    |
+| Voxtral Mini V2 (batch) | Commercial  | N/A          | ~4      | 13        | Yes         | Context biasing   | Cloud, Edge, Self-host   | No          | $0.003    |
+| Deepgram Nova-3         | Commercial  | <300         | ~6.8    | 36+       | Add-on      | Keyterm, Custom   | Cloud, On-prem, Edge     | No          | ~$0.0045  |
+| ElevenLabs Scribe v2 RT | Commercial  | <150         | ~6.5    | 90+       | Optional    | Keyterm (Batch)   | Cloud API, Agents        | No          | ~$0.015   |
+| Sherpa-ONNX (Zipformer) | Open-source | 100–300      | ~4–6    | 10+       | Yes         | Prompt-tuning     | Self-hosted, Edge, WASM  | Yes         | Free      |
+| AssemblyAI Universal-2  | Commercial  | 300–600      | ~14.5   | 102       | Add-on      | Custom vocab      | Cloud API                | No          | ~$0.006   |
+| Google Chirp            | Commercial  | 200–500      | ~11.6   | 125+      | Yes         | Phrase hints      | Cloud, On-prem           | No          | ~$0.006   |
+| AWS Transcribe          | Commercial  | 200–400      | ~14     | 100+      | Add-on      | Custom vocab      | Cloud, Edge (Greengrass) | No          | ~$0.024   |
+| Microsoft Azure Speech  | Commercial  | 200–500      | ~17     | 100+      | Yes         | Phrase lists      | Cloud, On-device, Hybrid | No          | ~$0.016   |
+| Whisper Large V3        | Open-source | 200–500      | ~7.4    | 99+       | No\*        | Fine-tuning       | Self-hosted, Edge        | Yes         | Free      |
+| Canary Qwen 2.5B        | Open-source | 100–300      | ~5.6    | English   | No          | LLM decoder       | Self-hosted              | Yes         | Free      |
+| Omnilingual ASR         | Open-source | ~1000        | <10 CER | 1,600+    | No          | Zero-shot         | Self-hosted              | Yes         | Free      |
+| Parakeet TDT            | Open-source | <100         | ~8      | English   | No          | Fast streaming    | Self-hosted, Edge        | Yes         | Free      |
 
-*Whisper does not natively support diarization, but can be combined with external diarization toolkits.
+\*Whisper does not natively support diarization, but can be combined with external diarization toolkits.
+\*\*Soniox v4 WER benchmarks not yet independently published; open-source comparison framework available at https://github.com/soniox/soniox-compare.
+\*\*\*Voxtral Realtime diarization not available; use batch mode (Voxtral Mini V2) for speaker identification.
 
 ---
 
 ## 16. Analysis of Comparison Table
 
-The comparison table above highlights the diversity and strengths of leading real-time streaming ASR solutions as of early 2026. **Deepgram Nova-3** and **ElevenLabs Scribe v2 Realtime** set the benchmark for commercial APIs, delivering sub-300ms and sub-150ms latency, respectively, with WERs in the 6–7% range and robust multilingual support. Both offer speaker diarization as an add-on or optional feature, with advanced domain adaptation capabilities through keyterm prompting and custom model training.
+The comparison table above highlights the diversity and strengths of leading real-time streaming ASR solutions as of early 2026.
 
-**Sherpa-ONNX** stands out among open-source toolkits for its flexibility, competitive accuracy, and support for streaming, diarization, and prompt-tuning. Its deployment options span self-hosted servers, edge devices, and browser-based WASM, making it ideal for privacy-sensitive and offline applications.
+**Soniox v4 Real-Time** (February 2026) introduces several architectural innovations that set it apart: **semantic endpointing** that understands thought completion rather than just detecting silence, **token-level `is_final` streaming** that sends individual tokens with finality flags rather than full-transcript replacements, and **manual finalization** that returns high-accuracy finals in milliseconds. At ~$0.002/min it is also the cheapest cloud streaming option. Its 60+ language support with real-time diarization and translation makes it a strong all-around choice. The open-source comparison framework (https://github.com/soniox/soniox-compare) provides transparent benchmarking against competitors.
+
+**Voxtral Realtime** (Mistral) represents a significant shift—combining state-of-the-art accuracy (~4% WER) with competitive pricing ($0.006/min) and **open weights under Apache 2.0**, creating a compelling path from cloud API to self-hosted deployment. The configurable latency-accuracy tradeoff (sub-200ms to 2.4s) provides flexibility for different use cases. Main limitations are fewer languages (13) and no realtime diarization.
+
+**Deepgram Nova-3** and **ElevenLabs Scribe v2 Realtime** remain strong alternatives. Deepgram offers broader language support (36+) at competitive pricing, while ElevenLabs leads in language coverage (90+), automatic code-switching, and predictive transcription—critical features for global and multi-speaker applications.
+
+**Sherpa-ONNX** stands out among open-source toolkits for its flexibility, competitive accuracy, and support for streaming, diarization, and prompt-tuning. Its deployment options span self-hosted servers, edge devices, and browser-based WASM, making it ideal for privacy-sensitive and offline applications. The lightweight models (~200-500MB) are far more resource-efficient than Voxtral's 4B parameters (~8-16GB).
 
 **AssemblyAI**, **Google Chirp**, **AWS Transcribe**, and **Microsoft Azure Speech** provide strong alternatives for enterprises seeking managed cloud APIs with broad language coverage and integrated features. Their WERs range from 11–17%, with latency typically in the 200–600ms range.
 
@@ -475,7 +590,7 @@ Despite remarkable progress, several challenges and opportunities remain in real
 
 ## Conclusion
 
-As of early 2026, real-time streaming ASR has reached a level of maturity and sophistication that enables seamless, natural voice interactions across a wide range of applications and languages. Deepgram Nova-3 and ElevenLabs Scribe v2 Realtime lead the commercial landscape with unmatched latency and accuracy, while Sherpa-ONNX, Whisper, and Omnilingual ASR exemplify the power and flexibility of open-source solutions. The field continues to evolve rapidly, with ongoing innovations in multilingual modeling, edge deployment, joint ASR-diarization frameworks, and domain adaptation.
+As of early 2026, real-time streaming ASR has reached a level of maturity and sophistication that enables seamless, natural voice interactions across a wide range of applications and languages. **Soniox v4 Real-Time** pushes the frontier with semantic endpointing and token-level streaming at the lowest price point, while **Voxtral Realtime** offers the best accuracy with an open-weights self-hosting path. **Deepgram Nova-3** and **ElevenLabs Scribe v2 Realtime** remain strong for broader language coverage and established ecosystems. **Sherpa-ONNX**, Whisper, and Omnilingual ASR exemplify the power and flexibility of open-source solutions. The field continues to evolve rapidly, with ongoing innovations in multilingual modeling, edge deployment, joint ASR-diarization frameworks, and domain adaptation.
 
 For developers, enterprises, and researchers, the choice of ASR solution depends on specific requirements for latency, accuracy, language coverage, privacy, and deployment flexibility. The current SOTA offers a rich ecosystem of models and APIs, each with distinct strengths and trade-offs. By leveraging the latest advances and benchmarking tools, stakeholders can build voice-enabled systems that are accurate, responsive, and inclusive—pushing the boundaries of what is possible in human-computer interaction.
 

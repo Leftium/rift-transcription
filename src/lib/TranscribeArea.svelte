@@ -1,21 +1,20 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import type { HTMLTextareaAttributes } from 'svelte/elements';
 	import type { Transcript, TranscriptEvent } from '$lib/types.js';
 	import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
 
-	interface Props {
-		value: string;
+	interface Props extends HTMLTextareaAttributes {
+		value?: string;
 		placeholder?: string;
-		disabled?: boolean;
-		oninput?: (e: Event) => void;
 	}
 
 	let {
 		value = $bindable(''),
 		placeholder = 'Type or speak...',
-		disabled = false,
-		oninput
+		oninput,
+		...restProps
 	}: Props = $props();
 
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
@@ -181,7 +180,7 @@
 		}
 	}
 
-	function handleInput(e: Event): void {
+	function handleInput(e: Event & { currentTarget: EventTarget & HTMLTextAreaElement }): void {
 		// Voice-dispatched InputEvents: forward to consumer but don't
 		// re-process — value is already updated by handleTranscript.
 		if (isVoiceCommit) {
@@ -189,8 +188,7 @@
 			return;
 		}
 
-		const target = e.target as HTMLTextAreaElement;
-		const rawValue = target.value;
+		const rawValue = e.currentTarget.value;
 
 		// If there was interim text and user typed, interims are implicitly cancelled
 		if (interims.size > 0) {
@@ -220,9 +218,9 @@
 
 	<!-- Textarea: transparent text, visible caret, handles all input -->
 	<textarea
+		{...restProps}
 		bind:this={textareaEl}
 		class="input"
-		{disabled}
 		placeholder=""
 		value={displayValue}
 		oninput={handleInput}
@@ -296,8 +294,12 @@
 		color: #999;
 	}
 
+	.transcribe-area:has(.input:disabled) {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
 	.input:disabled {
 		cursor: not-allowed;
-		opacity: 0.6;
 	}
 </style>

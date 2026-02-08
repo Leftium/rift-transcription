@@ -34,15 +34,17 @@
 		</div>
 
 		<section class="level">
-			<h2>Level 2: TranscribeArea</h2>
+			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
 			<p class="level-desc">Full experience. Interim text shown inline with dotted underline.</p>
 			<TranscribeArea bind:value={value2} placeholder="Type or speak (with interims)..." />
 			<CopyButton value={value2} />
 		</section>
 
 		<section class="level">
-			<h2>Level 1: textarea + <code>use:transcribable</code></h2>
-			<p class="level-desc">Voice input via action. Finals insert at cursor. No interim styling.</p>
+			<h2>Level 1: <code>&lt;textarea&gt;</code> + <code>transcribable</code> attachment</h2>
+			<p class="level-desc">
+				Voice input via attachment. Finals insert at cursor. No interim styling.
+			</p>
 			<textarea
 				{@attach transcribable}
 				class="plain-textarea"
@@ -53,7 +55,7 @@
 		</section>
 
 		<section class="level">
-			<h2>Level 0: Plain textarea</h2>
+			<h2>Level 0: Plain <code>&lt;textarea&gt;</code></h2>
 			<p class="level-desc">No voice input. Baseline for comparison.</p>
 			<textarea class="plain-textarea" bind:value={value0} placeholder="Type here (no voice)..."
 			></textarea>

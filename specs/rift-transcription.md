@@ -871,13 +871,39 @@ Every way text gets into a textarea follows the same pattern: events fire _on th
 | **OS dictation** (system-level) | OS speech service → arrives as composition events or direct `input`                           | Yes (platform-dependent) |
 | **Voice (Web Speech API)**      | Events fire on a separate `SpeechRecognition` object. **Nothing hits the textarea.**          | **Gap**                  |
 
-Pen handwriting is the most instructive comparison: the user draws strokes, the OS recognizes characters, and the result arrives at the textarea as composition events — the element never sees raw strokes. The [EditContext API](https://developer.mozilla.org/en-US/docs/Web/API/EditContext_API) (experimental) makes this pipeline explicit:
+Pen handwriting is the most instructive comparison: the user draws strokes, the OS recognizes characters, and the result arrives at the textarea as composition events — the element never sees raw strokes.
+
+#### The EditContext pipeline
+
+The [EditContext API](https://developer.mozilla.org/en-US/docs/Web/API/EditContext_API) (experimental, Chromium-only) makes the platform's text input pipeline explicit. MDN identifies [5 actors](https://developer.mozilla.org/en-US/docs/Web/API/EditContext_API#concept) involved in text entry:
 
 ```
-User → Input method software → OS text input service → Text edit context → Editable region
+(1) User        — provides input (keystrokes, pen strokes, speech)
+      ↓
+(2) Input method — converts raw input to text (IME, handwriting recognizer)
+      ↓
+(3) OS text input service — routes text to the focused element
+      ↓
+(4) Text edit context — manages text buffer, selection, composition state
+      ↓
+(5) Editable region — renders the text (textarea, contenteditable, canvas)
 ```
 
-Voice via Web Speech API is the odd one out. Every other indirect text input method goes through the OS text input service and arrives as events on the element. Voice bypasses this entirely. **TranscribeArea fills this gap** — it makes voice input behave like every other text input source.
+For `<textarea>` and `contenteditable`, the browser handles (3)–(5) automatically. EditContext lets apps take over (4)–(5) for custom rendering (canvas, WebGL, etc.) while still receiving input from the OS.
+
+**All indirect text input — IME, handwriting, OS dictation — flows through (3).** That's why pen handwriting arrives as composition events without any app code. The OS does the recognition; the element just sees text.
+
+**Voice via Web Speech API bypasses this pipeline entirely.** The `SpeechRecognition` object is a standalone API — results fire on the recognition object, not the element. It skips steps (3)–(4):
+
+```
+(1) User speaks
+      ↓
+(2) Web Speech API (recognizer)
+      ↓
+    ✗ Results fire on SpeechRecognition object, NOT on the textarea
+```
+
+**TranscribeArea fills this gap** — it acts as (4), receiving `Transcript` events from the voice recognizer and managing the composition lifecycle that the OS would normally handle. This makes voice input behave like every other text input source from the element's perspective.
 
 ### Voice Input as IME Composition
 

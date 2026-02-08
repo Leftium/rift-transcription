@@ -1,5 +1,5 @@
 /**
- * transcribable — Svelte action that makes any <textarea> receive voice input.
+ * transcribable — Svelte attachment that makes any <textarea> receive voice input.
  *
  * Listens for 'rift:transcript' CustomEvents on document. When the textarea
  * is focused and a final transcript arrives, inserts text at the cursor
@@ -13,7 +13,7 @@
  * For interim display, use TranscribeArea instead.
  *
  * Usage:
- *   <textarea use:transcribable bind:value />
+ *   <textarea {@attach transcribable} bind:value />
  */
 
 import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
@@ -51,9 +51,7 @@ export function transcribable(node: HTMLTextAreaElement) {
 
 	document.addEventListener(TRANSCRIPT_EVENT, handleTranscriptEvent);
 
-	return {
-		destroy() {
-			document.removeEventListener(TRANSCRIPT_EVENT, handleTranscriptEvent);
-		}
+	return () => {
+		document.removeEventListener(TRANSCRIPT_EVENT, handleTranscriptEvent);
 	};
 }

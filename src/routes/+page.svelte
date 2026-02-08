@@ -22,8 +22,7 @@
 	</p>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- use:voice.attach auto-pauses/resumes listening on focus/blur -->
-	<div class="input-group" use:voice.attach>
+	<div class="input-group" {@attach voice.autoListen}>
 		<div class="controls">
 			<button onclick={voice.toggle}>
 				{voice.enabled ? 'Disable Voice Input' : 'Enable Voice Input'}
@@ -45,7 +44,7 @@
 			<h2>Level 1: textarea + <code>use:transcribable</code></h2>
 			<p class="level-desc">Voice input via action. Finals insert at cursor. No interim styling.</p>
 			<textarea
-				use:transcribable
+				{@attach transcribable}
 				class="plain-textarea"
 				bind:value={value1}
 				placeholder="Type or speak (finals only)..."

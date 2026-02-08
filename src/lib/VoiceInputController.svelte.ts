@@ -5,7 +5,7 @@
  * Usage:
  *   const voice = new VoiceInputController();
  *   <button onclick={voice.toggle}>{voice.enabled ? 'Disable' : 'Enable'}</button>
- *   <div use:voice.attach>...</div>
+ *   <div {@attach voice.autoListen}>...</div>
  */
 
 import { isErr } from 'wellcrafted/result';
@@ -66,8 +66,8 @@ export class VoiceInputController {
 		}
 	};
 
-	/** Svelte action — attaches auto-listen focus/blur to a container element. */
-	attach = (node: HTMLElement) => {
+	/** Attachment — auto-pauses/resumes listening on focus/blur of container. */
+	autoListen = (node: HTMLElement) => {
 		const handleFocusIn = () => {
 			if (this.enabled) {
 				this.#start();
@@ -84,11 +84,9 @@ export class VoiceInputController {
 		node.addEventListener('focusin', handleFocusIn);
 		node.addEventListener('focusout', handleFocusOut);
 
-		return {
-			destroy() {
-				node.removeEventListener('focusin', handleFocusIn);
-				node.removeEventListener('focusout', handleFocusOut);
-			}
+		return () => {
+			node.removeEventListener('focusin', handleFocusIn);
+			node.removeEventListener('focusout', handleFocusOut);
 		};
 	};
 }

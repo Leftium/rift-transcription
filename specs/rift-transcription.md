@@ -570,49 +570,88 @@ interface TranscriptionBackend {
 }
 
 // Aligned with transcription-rs Transcript type
+// See: https://github.com/Leftium/transcribe-rs/blob/docs/streaming-api-spec/specs/transcription-rs-appendix.md
 type Transcript = {
 	text: string;
 
 	// Result-level finality
 	isFinal: boolean; // this result won't be revised
-	isEndpoint: boolean; // natural speech boundary (pause/silence)
-	segmentId: number; // correlates partials with their final
+	isEndpoint: boolean; // natural speech boundary detected (silence/pause)
+	segmentId: number; // same ID for all revisions of one utterance
 
-	// Timing (seconds)
+	// Timing (seconds from stream start)
 	start?: number;
 	end?: number;
 
-	// Metadata
-	confidence?: number;
-	language?: string;
+	// Confidence
+	confidence?: number; // 0.0–1.0, overall confidence score
+
+	// Language
+	language?: string; // detected/specified language code (e.g., "en", "en-US")
+	languageConfidence?: number; // 0.0–1.0, confidence in language detection
+
+	// Speaker diarization
+	speaker?: Speaker; // speaker identifier for this segment
 
 	// Word-level detail
+	words?: Word[];
+
+	// N-best alternatives
+	alternatives?: Alternative[]; // alternative transcriptions for same audio
+
+	// Raw backend response for debug/niche fields
+	raw?: unknown; // full backend response (opt-in, disabled by default)
+};
+
+// Speaker identifier — backends use different schemes
+type Speaker =
+	| { type: 'id'; id: number } // numeric ID (0, 1, 2...) — Deepgram, Azure, Rev.ai
+	| { type: 'label'; label: string }; // string label ("A", "B") — AssemblyAI, Google
+
+// Alternative transcription hypothesis (n-best)
+type Alternative = {
+	text: string;
+	confidence?: number;
 	words?: Word[];
 };
 
 type Word = {
 	text: string;
-	start: number;
-	end: number;
-	confidence?: number;
+	punctuated?: string; // with punctuation/caps (e.g., "yeah" → "Yeah.")
+	start: number; // start time (seconds)
+	end: number; // end time (seconds)
+	confidence?: number; // 0.0–1.0
+	speaker?: Speaker; // speaker for this word (may differ from segment)
 };
 ```
 
+**Design notes** (from [transcription-rs appendix](https://github.com/Leftium/transcribe-rs/blob/docs/streaming-api-spec/specs/transcription-rs-appendix.md)):
+
+- **`isFinal` vs `isEndpoint`** — `isFinal` means "this text won't be revised" (use for UI: show as committed text). `isEndpoint` means "speaker paused/stopped, segment complete" (use to trigger utterance boundary logic). A result can be `isFinal` without being `isEndpoint` — text is stable but speaker hasn't paused yet.
+- **`segmentId`** — groups all revisions of one utterance. Partials share the same ID as their final. Use to replace previous interim text with updated results.
+- **`confidence`** — serves dual purpose: model certainty for finals, stability indicator for interims (how likely this partial will change). Backends with boolean `Stable` (e.g., AWS) map to `1.0`/`0.5`.
+- **`speaker`** — backends vary: Deepgram/Azure use numeric IDs, AssemblyAI/Google use string labels. The discriminated union preserves this distinction.
+- **`punctuated`** (on `Word`) — Deepgram's `punctuated_word` pattern. Useful when you need both raw (`"yeah"`) and display (`"Yeah."`) forms.
+- **`alternatives`** — n-best hypotheses for the same audio segment. Primary hypothesis is in `text`/`words`; alternatives provide ranked fallbacks.
+- **`raw`** — full backend response for debugging or accessing niche fields not in this type. Disabled by default for performance; enable via backend config.
+- **Batch results** always have `isFinal: true` and `isEndpoint: true`.
+
 **Backend capability matrix:**
 
-| Field         | Web Speech           | Sherpa | Soniox v4      | Voxtral | Scribe  |
-| ------------- | -------------------- | ------ | -------------- | ------- | ------- |
-| `text`        | ✓                    | ✓      | ✓              | ✓       | ✓       |
-| `isFinal`     | ✓                    | ✓      | ✓ (per-token)  | ✓       | ✓       |
-| `isEndpoint`  | forced only          | ✓      | ✓ (semantic)   | ✓       | ✓       |
-| `segmentId`   | ✓ (client-generated) | ✓      | ✓              | ✓       | ✓       |
-| `start`/`end` | ✗                    | ✓      | ✓              | ✓       | ✓       |
-| `words`       | ✗                    | ✓      | ✓ (tokens)     | segment | ✓       |
-| `confidence`  | ✗                    | ✓      | ?              | ?       | ✓       |
-| `finalize`    | fake (stop+restart)  | ✓      | ✓ (ms-latency) | ✓       | ✓       |
-| Languages     | browser-dependent    | 10+    | 60+            | 13      | 90+     |
-| Diarization   | ✗                    | ✓      | ✓ (real-time)  | batch   | batch   |
-| Price/min     | free                 | free   | $0.002         | $0.006  | ~$0.015 |
+| Field          | Web Speech           | Sherpa | Soniox v4      | Voxtral | Scribe  |
+| -------------- | -------------------- | ------ | -------------- | ------- | ------- |
+| `text`         | ✓                    | ✓      | ✓              | ✓       | ✓       |
+| `isFinal`      | ✓                    | ✓      | ✓ (per-token)  | ✓       | ✓       |
+| `isEndpoint`   | forced only          | ✓      | ✓ (semantic)   | ✓       | ✓       |
+| `segmentId`    | ✓ (client-generated) | ✓      | ✓              | ✓       | ✓       |
+| `start`/`end`  | ✗                    | ✓      | ✓              | ✓       | ✓       |
+| `words`        | ✗                    | ✓      | ✓ (tokens)     | segment | ✓       |
+| `confidence`   | ✗                    | ✓      | ?              | ?       | ✓       |
+| `speaker`      | ✗                    | ✓      | ✓ (real-time)  | batch   | batch   |
+| `alternatives` | ✗                    | ✗      | ✗              | ✗       | ✗       |
+| `finalize`     | fake (stop+restart)  | ✓      | ✓ (ms-latency) | ✓       | ✓       |
+| Languages      | browser-dependent    | 10+    | 60+            | 13      | 90+     |
+| Price/min      | free                 | free   | $0.002         | $0.006  | ~$0.015 |
 
 **Notes:**
 
@@ -620,6 +659,8 @@ type Word = {
 - Web Speech lacks timing/word data—utterance tracker treats full transcript as single segment
 - Soniox streams individual tokens with `is_final` flags (not full-transcript replacements)
 - Voxtral provides segment-level timestamps; word-level granularity TBD
+- `speaker` row shows diarization availability (same data that was previously in a separate "Diarization" row)
+- `alternatives` not yet available from any streaming backend we support; future addition
 - Uses WellCrafted Result type for explicit error handling
 
 ### Backend Selection Logic
@@ -798,11 +839,107 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 
 ---
 
+## TranscribeArea: Textarea-Shaped Voice Input
+
+### Core Concept
+
+A `TranscribeArea` is a textarea that also accepts input events triggered by voice. From the component's perspective, voice is just another input source — like an IME or autocomplete. The component doesn't own the mic or recording logic; it receives `Transcript` events and handles display/composition.
+
+**The component is a display/composition layer, not a transcription engine.** It accepts the `Transcript` type already defined in this spec — text with an `isFinal` flag — and manages the interim→final lifecycle. Audio capture, recording control, and backend selection all live outside the component.
+
+```
+mic → recorder → audio → transcriber → Transcript → TranscribeArea
+                                        ^^^^^^^^^^    ^^^^^^^^^^^^^^
+                                        this type     this component
+```
+
+This makes the R&D portable:
+
+- **In rift-transcription**: a thin wrapper adds a mic button and calls Web Speech, feeds `Transcript` events into the component
+- **In Whispering**: the existing recording pipeline (global hotkey, toolbar, VAD) feeds `Transcript` events into the same component
+- **In Handy**: whatever trigger mechanism they use, same component
+
+### Input Contract
+
+The component receives transcription results via a method, not props:
+
+```typescript
+// Consumer calls this when a transcription result arrives
+transcribeArea.handleTranscript(result: Transcript): void
+```
+
+**Why a method instead of props (`interimText` / `isTranscribing`):**
+
+- The component manages the interim→final lifecycle internally — it needs to track `segmentId` to know which interim to replace when a new partial arrives, and when to commit text on `isFinal`
+- Props would force the consumer to manage state that the component understands better (which segment is active, what to replace)
+- A method maps naturally to the event-driven nature of transcription callbacks: `backend.onResult = (t) => transcribeArea.handleTranscript(t)`
+
+**What maps cleanly from textarea:**
+
+- `value` / `bind:value` — committed text (finals only)
+- `placeholder` — "Type or speak..."
+- `disabled`, `readonly`
+- `oninput` — fires on both typing and final transcription commits
+- Selection/cursor — insertion point for new speech
+- Copy/paste still works
+
+**What the consumer owns:** mic access, recording start/stop, backend selection, feeding `Transcript` events to the component
+
+**What the component owns:** displaying text (typed + transcribed), managing interim→final replacement via `segmentId`, cursor/insertion behavior
+
+### Voice Input as IME Composition
+
+Voice input behaves like an [IME (Input Method Editor)](https://developer.mozilla.org/en-US/docs/Glossary/Input_method_editor). CJK input has the same lifecycle:
+
+1. User starts composing → interim/candidate text appears (uncommitted)
+2. Composition updates → candidates change
+3. User confirms → text commits into the value
+
+Voice streaming follows the same pattern:
+
+1. Speech starts → interim text appears
+2. More words recognized → interim updates
+3. Utterance finalizes → text commits
+
+Browsers have [`compositionstart`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionstart_event), [`compositionupdate`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionupdate_event), [`compositionend`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionend_event) events for exactly this pattern:
+
+```
+compositionstart  → { data: "" }              // mic starts hearing speech
+compositionupdate → { data: "hello" }         // interim result
+compositionupdate → { data: "hello world" }   // more words recognized
+compositionend    → { data: "Hello world." }  // utterance finalized
+input             → value updated
+```
+
+While composition is active, `input` events fire but are marked with `event.isComposing === true`, so well-behaved code can ignore half-formed input.
+
+### Implementation Options
+
+1. **Dispatch real CompositionEvents** — the textarea/contenteditable natively handles uncommitted text display (underlined by default). Any code already handling composition correctly (framework input bindings, etc.) just works. Risk: browsers may not expect synthetic composition events from JavaScript; behavior could be inconsistent.
+
+2. **Mirror the pattern conceptually** — use the same lifecycle (props like `interimText` + `isComposing`) but handle the display yourself. More control, more portable across frameworks.
+
+Option 2 is more practical for a prototype, but the mental model from option 1 is correct: voice input is a composition session, and the TranscribeArea is a text input that understands composition from multiple sources.
+
+### Interim Text Display
+
+The key challenge: a plain textarea can't style inline ranges. Interim (unconfirmed) text needs visual distinction from committed text.
+
+Approaches:
+
+- **Contenteditable or ProseMirror** — can style arbitrary ranges (underline, gray, etc.)
+- **Layered** — textarea + overlay for interim text styling
+- **Separate region** — show interim text above/below the committed text area
+
+This is the primary reason the full RIFT editor uses ProseMirror (see below), but a simpler TranscribeArea variant could use the layered or separate-region approach for integration into apps that don't need the full rich editor.
+
+---
+
 ## Editor Implementation
 
 ### Why Not Textarea?
 
-Regular `<textarea>` won't work because we need:
+Regular `<textarea>` won't work for the full RIFT editor because we need:
 
 1. **Rich spans with metadata** — each word/phrase knows its origin, audio ref, timestamps
 2. **Multiple cursors/anchors** — transcription insertion point vs user cursor

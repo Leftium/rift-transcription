@@ -115,6 +115,9 @@ export function needsSpaceAfter(after: string): boolean {
 export interface TranscriptionSource {
 	readonly name: string;
 
+	/** Reactive — true while recognition/capture is active. */
+	listening: boolean;
+
 	startListening(): Result<void, SourceError>;
 	stopListening(): Result<void, SourceError>;
 
@@ -122,4 +125,5 @@ export interface TranscriptionSource {
 	finalize(): void;
 
 	onResult: ((result: Transcript) => void) | null;
+	onError: ((error: string, message: string) => void) | null;
 }

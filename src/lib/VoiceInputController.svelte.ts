@@ -2,6 +2,8 @@
  * VoiceInputController — reactive controller for voice input lifecycle.
  *
  * Encapsulates source creation, auto-listen on focus/blur, and toggle UI state.
+ * Supports multiple transcription sources (Web Speech API, Sherpa-ONNX, etc.).
+ *
  * Usage:
  *   const voice = new VoiceInputController();
  *   <button onclick={voice.toggle}>{voice.enabled ? 'Disable' : 'Enable'}</button>
@@ -9,23 +11,42 @@
  */
 
 import { isErr } from 'wellcrafted/result';
+import type { TranscriptionSource } from '$lib/types.js';
 import { WebSpeechSource } from '$lib/sources/web-speech.svelte';
+import { SherpaSource } from '$lib/sources/sherpa.svelte';
+
+export type SourceType = 'web-speech' | 'sherpa';
 
 export class VoiceInputController {
-	#source: WebSpeechSource | null = null;
+	#source: TranscriptionSource | null = $state(null);
 	#container: HTMLElement | null = null;
 
 	enabled = $state(false);
+	sourceType = $state<SourceType>('sherpa');
+	sherpaUrl = $state('ws://localhost:6006');
 
 	get listening(): boolean {
 		return this.#source?.listening ?? false;
 	}
 
+	/** Reactive — true while WebSocket is connected (sherpa only). */
+	get connected(): boolean {
+		const s = this.#source;
+		if (s && 'connected' in s) {
+			return (s as SherpaSource).connected;
+		}
+		return false;
+	}
+
 	// --- Source lifecycle ---
 
-	#ensureSource(): WebSpeechSource {
+	#ensureSource(): TranscriptionSource {
 		if (!this.#source) {
-			this.#source = new WebSpeechSource();
+			if (this.sourceType === 'sherpa') {
+				this.#source = new SherpaSource(this.sherpaUrl);
+			} else {
+				this.#source = new WebSpeechSource();
+			}
 			this.#source.onError = (error, message) => {
 				this.enabled = false;
 				console.error(`[VoiceInput] Fatal error: ${error} — ${message}`);
@@ -61,6 +82,23 @@ export class VoiceInputController {
 			this.#focusContainer();
 		}
 	};
+
+	/** Switch transcription source. Stops current, destroys, next start uses new type.
+	 *  Accepts string for direct use with <select> onchange values. */
+	setSource(type: SourceType | string, url?: string) {
+		const wasEnabled = this.enabled;
+		if (wasEnabled) {
+			this.enabled = false;
+			this.#stop();
+		}
+		this.#source = null;
+		this.sourceType = type as SourceType;
+		if (url !== undefined) this.sherpaUrl = url;
+		if (wasEnabled) {
+			this.enabled = true;
+			this.#focusContainer();
+		}
+	}
 
 	#focusContainer() {
 		if (!this.#container) return;

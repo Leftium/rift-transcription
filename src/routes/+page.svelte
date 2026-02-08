@@ -27,9 +27,30 @@
 			<button onclick={voice.toggle}>
 				{voice.enabled ? 'Disable Voice Input' : 'Enable Voice Input'}
 			</button>
+
+			<select value={voice.sourceType} onchange={(e) => voice.setSource(e.currentTarget.value)}>
+				<option value="web-speech">Web Speech API</option>
+				<option value="sherpa">Sherpa (local)</option>
+			</select>
+
+			{#if voice.sourceType === 'sherpa'}
+				<input
+					type="text"
+					class="server-url"
+					bind:value={voice.sherpaUrl}
+					placeholder="ws://localhost:6006"
+					size="24"
+				/>
+				<a href="/sherpa" class="setup-link">Setup</a>
+			{/if}
+
 			<span class="status">
 				<span class="dot" class:active={voice.listening}></span>
-				{voice.listening ? 'Listening — Web Speech API' : 'Idle'}
+				{#if voice.listening}
+					Listening — {voice.sourceType === 'sherpa' ? 'Sherpa' : 'Web Speech'}
+				{:else}
+					Idle
+				{/if}
 			</span>
 		</div>
 
@@ -153,6 +174,32 @@
 
 	button:hover {
 		background: #e8e8e8;
+	}
+
+	select {
+		padding: 6px 8px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		background: #f5f5f5;
+		font-size: 13px;
+	}
+
+	.server-url {
+		padding: 6px 8px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		font-size: 13px;
+		font-family: monospace;
+	}
+
+	.setup-link {
+		color: #4a90d9;
+		font-size: 13px;
+		text-decoration: none;
+	}
+
+	.setup-link:hover {
+		text-decoration: underline;
 	}
 
 	.status {

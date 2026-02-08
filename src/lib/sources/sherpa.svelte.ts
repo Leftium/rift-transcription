@@ -1,0 +1,306 @@
+/**
+ * SherpaSource — TranscriptionSource backed by sherpa-onnx WebSocket server.
+ *
+ * Connects to a local sherpa-onnx C++ (or Python) WebSocket server, captures
+ * mic audio via AudioWorklet, streams 16kHz Float32 binary frames, and maps
+ * server JSON responses to the Transcript type.
+ *
+ * C++ server JSON: { text, tokens, timestamps, segment, start_time, is_final, is_eof }
+ * Python server JSON: { text, segment } (no is_final — detect by segment increment)
+ */
+
+import { Ok } from 'wellcrafted/result';
+import type { TranscriptionSource, Transcript, Word } from '$lib/types.js';
+import { SourceErr, broadcastTranscript } from '$lib/types.js';
+import { AudioCapture } from '$lib/audio-capture.js';
+
+// ---------------------------------------------------------------------------
+// Server response shape (superset of C++ and Python servers)
+// ---------------------------------------------------------------------------
+
+interface SherpaServerMessage {
+	text: string;
+	segment: number;
+	// C++ server only:
+	is_final?: boolean;
+	is_eof?: boolean;
+	tokens?: string[];
+	timestamps?: number[];
+	start_time?: number;
+	words?: unknown[];
+}
+
+// ---------------------------------------------------------------------------
+// SherpaSource
+// ---------------------------------------------------------------------------
+
+export class SherpaSource implements TranscriptionSource {
+	readonly name = 'sherpa';
+
+	/** Callback for results. Defaults to broadcastTranscript. */
+	onResult: ((result: Transcript) => void) | null = broadcastTranscript;
+	onError: ((error: string, message: string) => void) | null = null;
+
+	/** Reactive — true while audio is being captured and sent. */
+	listening = $state(false);
+
+	/** Reactive — true while WebSocket is connected. */
+	connected = $state(false);
+
+	private serverUrl: string;
+	private audioCapture: AudioCapture;
+	private ws: WebSocket | null = null;
+	private shouldBeListening = false;
+
+	// Segment tracking
+	private currentSegment = -1;
+	private nextSegmentId = 0;
+	private lastTextBySegment = new Map<number, string>();
+
+	// Reconnect backoff (mirrors WebSpeechSource pattern)
+	private restartAttempts = 0;
+	private restartTimer: ReturnType<typeof setTimeout> | null = null;
+	private static readonly MAX_RESTART_ATTEMPTS = 5;
+	private static readonly RESTART_DELAY_MS = 300;
+
+	constructor(serverUrl: string = 'ws://localhost:6006') {
+		this.serverUrl = serverUrl;
+		this.audioCapture = new AudioCapture();
+	}
+
+	startListening() {
+		if (this.shouldBeListening) return Ok(undefined);
+
+		this.shouldBeListening = true;
+		this.restartAttempts = 0;
+		this.currentSegment = -1;
+		this.nextSegmentId = 0;
+		this.lastTextBySegment.clear();
+		this.connectAndStart();
+		return Ok(undefined);
+	}
+
+	stopListening() {
+		this.shouldBeListening = false;
+
+		if (this.restartTimer != null) {
+			clearTimeout(this.restartTimer);
+			this.restartTimer = null;
+		}
+
+		this.audioCapture.stop();
+		this.listening = false;
+
+		if (this.ws) {
+			// Signal end of audio to server
+			try {
+				if (this.ws.readyState === WebSocket.OPEN) {
+					this.ws.send('Done');
+				}
+			} catch {
+				// ignore — socket may already be closing
+			}
+			this.ws.onclose = null;
+			this.ws.onerror = null;
+			this.ws.onmessage = null;
+			this.ws.close();
+			this.ws = null;
+		}
+
+		this.connected = false;
+		return Ok(undefined);
+	}
+
+	finalize() {
+		// Sherpa has no "force endpoint" command. No-op for now.
+		// Future: could close stream ("Done") and reopen, but that's
+		// slower than Web Speech's stop/restart. Leave as no-op initially.
+	}
+
+	// -----------------------------------------------------------------------
+	// Private — connection lifecycle
+	// -----------------------------------------------------------------------
+
+	private async connectAndStart() {
+		try {
+			await this.connectWebSocket();
+			// Wire audio capture to send binary frames
+			this.audioCapture.onAudioData = (samples: Float32Array) => {
+				if (this.ws?.readyState === WebSocket.OPEN) {
+					// Send raw Float32 buffer — sherpa expects Float32 samples
+					this.ws.send(samples.buffer);
+				}
+			};
+			await this.audioCapture.start();
+			this.listening = true;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(`[SherpaSource] Failed to start: ${message}`);
+
+			// Clean up partial state
+			this.audioCapture.stop();
+			this.listening = false;
+			if (this.ws) {
+				this.ws.onclose = null;
+				this.ws.close();
+				this.ws = null;
+			}
+			this.connected = false;
+
+			// Attempt reconnect if appropriate
+			if (this.shouldBeListening) {
+				this.scheduleReconnect();
+			} else {
+				this.onError?.('connection-failed', message);
+			}
+		}
+	}
+
+	private connectWebSocket(): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const ws = new WebSocket(this.serverUrl);
+			this.ws = ws;
+
+			ws.onopen = () => {
+				if (this.ws !== ws) return;
+				this.connected = true;
+				this.restartAttempts = 0;
+				resolve();
+			};
+
+			ws.onmessage = (event: MessageEvent) => {
+				if (this.ws !== ws) return;
+				if (typeof event.data === 'string') {
+					this.handleServerMessage(event.data);
+				}
+			};
+
+			ws.onerror = (event: Event) => {
+				if (this.ws !== ws) return;
+				console.error('[SherpaSource] WebSocket error', event);
+				reject(new Error('WebSocket connection failed'));
+			};
+
+			ws.onclose = () => {
+				if (this.ws !== ws) return;
+				this.connected = false;
+				this.listening = false;
+				this.audioCapture.stop();
+
+				if (this.shouldBeListening) {
+					this.scheduleReconnect();
+				}
+			};
+		});
+	}
+
+	private handleServerMessage(data: string) {
+		if (!this.onResult) return;
+
+		let msg: SherpaServerMessage;
+		try {
+			msg = JSON.parse(data);
+		} catch {
+			console.warn('[SherpaSource] Non-JSON message:', data);
+			return;
+		}
+
+		// Ignore EOF marker
+		if (msg.is_eof) return;
+
+		const text = msg.text?.trim() ?? '';
+		const segment = msg.segment ?? 0;
+
+		// Skip empty-text messages — sherpa sends these as segment
+		// placeholders and empty finals that would pollute committedThroughSegment
+		// tracking in TranscribeArea, blocking future interims.
+		if (!text) return;
+
+		// --- Detect server type and finality ---
+
+		const hasFinalField = 'is_final' in msg;
+
+		if (hasFinalField) {
+			// C++ server: has explicit is_final.
+			// Use monotonic segmentIds so TranscribeArea's
+			// committedThroughSegment rejection works correctly.
+			// Sherpa reuses server segment IDs after empty finals,
+			// so map them to our own counter.
+			if (msg.is_final) {
+				this.emitTranscript(text, this.nextSegmentId, true, msg);
+				this.nextSegmentId++;
+			} else {
+				this.emitTranscript(text, this.nextSegmentId, false, msg);
+			}
+		} else {
+			// Python server: detect finality by segment increment
+			if (this.currentSegment >= 0 && segment > this.currentSegment) {
+				// New segment started — finalize the previous one
+				const prevText = this.lastTextBySegment.get(this.currentSegment) ?? '';
+				if (prevText) {
+					this.emitTranscript(prevText, this.nextSegmentId, true, msg);
+					this.nextSegmentId++;
+				}
+			}
+
+			// Emit current as interim
+			this.lastTextBySegment.set(segment, text);
+			this.currentSegment = segment;
+			this.emitTranscript(text, this.nextSegmentId, false, msg);
+		}
+	}
+
+	private emitTranscript(
+		text: string,
+		segment: number,
+		isFinal: boolean,
+		raw: SherpaServerMessage
+	) {
+		if (!this.onResult) return;
+
+		// Build word-level detail from tokens + timestamps (C++ server)
+		let words: Word[] | undefined;
+		if (raw.tokens && raw.timestamps && raw.tokens.length === raw.timestamps.length) {
+			const startTime = raw.start_time ?? 0;
+			words = raw.tokens.map((token, i) => ({
+				text: token,
+				start: startTime + raw.timestamps![i],
+				end:
+					i + 1 < raw.timestamps!.length
+						? startTime + raw.timestamps![i + 1]
+						: startTime + raw.timestamps![i] + 0.1 // estimate
+			}));
+		}
+
+		const transcript: Transcript = {
+			text,
+			isFinal,
+			isEndpoint: isFinal,
+			segmentId: segment,
+			start: raw.start_time,
+			words,
+			raw
+		};
+
+		this.onResult(transcript);
+	}
+
+	private scheduleReconnect() {
+		if (this.restartAttempts >= SherpaSource.MAX_RESTART_ATTEMPTS) {
+			console.error(`[SherpaSource] Giving up after ${this.restartAttempts} reconnect attempts`);
+			this.shouldBeListening = false;
+			this.onError?.('reconnect-failed', 'Too many reconnect attempts');
+			return;
+		}
+
+		const delay = SherpaSource.RESTART_DELAY_MS * Math.pow(2, this.restartAttempts);
+		this.restartAttempts++;
+
+		this.restartTimer = setTimeout(() => {
+			this.restartTimer = null;
+			if (this.shouldBeListening) {
+				this.connectAndStart();
+			}
+		}, delay);
+	}
+}

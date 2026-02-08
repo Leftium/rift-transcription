@@ -1041,10 +1041,12 @@ The first implementation validates the input contract and overlay technique with
 - Keyboard and voice input coexist on the same element
 - `value` / `bind:value` reflects committed text
 
+**Known limitations:**
+
+- **Undo/redo is broken** — Svelte reactively sets the textarea's `value`, which the browser treats as a programmatic write (not a user edit), destroying the native undo stack. Fixing this in TranscribeArea would mean reimplementing an undo stack manually. Not worth it — ProseMirror's `history` plugin handles this natively for the RIFT Editor, where voice insertions are invertible transactions in the same undo stack as keyboard edits.
+
 **Deferred:**
 
-- `segmentId` tracking (concurrent/overlapping interims)
-- Cursor-position insertion (finals append at end only)
 - Composition interrupt on cursor move
 - Multiple simultaneous composition sessions
 

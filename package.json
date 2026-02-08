@@ -32,5 +32,8 @@
 		"typescript-eslint": "^8.53.1",
 		"vite": "^7.3.1",
 		"vite-plugin-devtools-json": "^1.0.0"
+	},
+	"dependencies": {
+		"wellcrafted": "^0.29.1"
 	}
 }

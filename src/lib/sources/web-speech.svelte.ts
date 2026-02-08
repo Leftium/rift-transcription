@@ -91,6 +91,7 @@ export class WebSpeechSource implements TranscriptionSource {
 	// Restart backoff — prevents tight restart loops when Chrome kills
 	// recognition repeatedly (e.g., no microphone, permission denied).
 	private restartAttempts = 0;
+	private restartTimer: ReturnType<typeof setTimeout> | null = null;
 	private static readonly MAX_RESTART_ATTEMPTS = 5;
 	private static readonly RESTART_DELAY_MS = 300; // base delay, doubles each attempt
 
@@ -105,9 +106,7 @@ export class WebSpeechSource implements TranscriptionSource {
 			});
 		}
 
-		if (this.shouldBeListening) {
-			return Ok(undefined);
-		}
+		if (this.shouldBeListening) return Ok(undefined);
 
 		this.shouldBeListening = true;
 		this.restartAttempts = 0; // explicit start — reset backoff
@@ -117,6 +116,12 @@ export class WebSpeechSource implements TranscriptionSource {
 
 	stopListening() {
 		this.shouldBeListening = false;
+		// Cancel any pending restart to prevent a stale timeout from
+		// spawning a second recognition instance after stop → start.
+		if (this.restartTimer != null) {
+			clearTimeout(this.restartTimer);
+			this.restartTimer = null;
+		}
 		if (this.recognition) {
 			this.recognition.onend = null; // prevent auto-restart
 			this.recognition.stop();
@@ -141,6 +146,22 @@ export class WebSpeechSource implements TranscriptionSource {
 	// -----------------------------------------------------------------------
 
 	private startRecognition(Ctor: SpeechRecognitionConstructor) {
+		// Abort any existing instance before creating a new one.
+		// Chrome aborts new instances if an old one is still tearing down.
+		if (this.recognition) {
+			const old = this.recognition;
+			old.onstart = null;
+			old.onresult = null;
+			old.onerror = null;
+			old.onend = null;
+			try {
+				old.abort();
+			} catch {
+				// ignore — may already be stopped
+			}
+			this.recognition = null;
+		}
+
 		const recognition = new Ctor();
 		recognition.continuous = true;
 		recognition.interimResults = true;
@@ -148,11 +169,15 @@ export class WebSpeechSource implements TranscriptionSource {
 		this.recognition = recognition;
 
 		recognition.onstart = () => {
+			if (this.recognition !== recognition) return;
 			this.listening = true;
-			this.restartAttempts = 0; // successful start — reset backoff
 		};
 
 		recognition.onresult = (event: SpeechRecognitionEvent) => {
+			if (this.recognition !== recognition) return;
+			// First real result confirms recognition is working — reset backoff
+			this.restartAttempts = 0;
+
 			if (!this.onResult) return;
 
 			// Snapshot nextSegmentId for stable IDs within this batch.
@@ -190,6 +215,7 @@ export class WebSpeechSource implements TranscriptionSource {
 		};
 
 		recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+			if (this.recognition !== recognition) return;
 			// 'no-speech' and 'aborted' are expected during normal lifecycle
 			if (event.error === 'no-speech' || event.error === 'aborted') return;
 
@@ -202,9 +228,11 @@ export class WebSpeechSource implements TranscriptionSource {
 		};
 
 		recognition.onend = () => {
+			// Guard against stale callbacks from a replaced instance
+			if (this.recognition !== recognition) return;
 			this.listening = false;
 
-			// Chrome kills recognition periodically — restart if we should still be listening
+			// Chrome kills recognition periodically — restart if we should still be listening.
 			if (this.shouldBeListening) {
 				if (this.restartAttempts >= WebSpeechSource.MAX_RESTART_ATTEMPTS) {
 					console.error(
@@ -219,7 +247,8 @@ export class WebSpeechSource implements TranscriptionSource {
 				if (Ctor) {
 					const delay = WebSpeechSource.RESTART_DELAY_MS * Math.pow(2, this.restartAttempts);
 					this.restartAttempts++;
-					setTimeout(() => {
+					this.restartTimer = setTimeout(() => {
+						this.restartTimer = null;
 						if (this.shouldBeListening) {
 							this.startRecognition(Ctor);
 						}

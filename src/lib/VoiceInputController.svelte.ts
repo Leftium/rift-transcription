@@ -55,43 +55,27 @@ export class VoiceInputController {
 			this.enabled = false;
 			this.#stop();
 		} else {
-			const s = this.#ensureSource();
-			if (!s.listening) {
-				const result = s.startListening();
-				if (isErr(result)) {
-					console.error(result.error.message);
-					return;
-				}
-			}
 			this.enabled = true;
-
-			// Focus the first textarea/input inside the autoListen container
-			// so the user can start speaking immediately without an extra click.
-			// Skip if a text input already has focus (user clicked into one).
-			if (this.#container) {
-				const active = document.activeElement;
-				const activeIsInput =
-					active instanceof HTMLTextAreaElement ||
-					active instanceof HTMLInputElement ||
-					(active instanceof HTMLElement && active.isContentEditable);
-				if (!activeIsInput || !this.#container.contains(active)) {
-					const target = this.#container.querySelector<HTMLElement>(
-						'textarea, input, [contenteditable]'
-					);
-					target?.focus();
-				}
-			}
+			// Focus the container's textarea so focusin → #start() fires,
+			// and future focusout pausing works correctly.
+			this.#focusContainer();
 		}
 	};
 
-	/** Attachment — auto-pauses/resumes listening on focus/blur of container. */
+	#focusContainer() {
+		if (!this.#container) return;
+		// Find the textarea inside the container (or the container itself if focusable)
+		const target =
+			this.#container.querySelector<HTMLElement>('textarea, [contenteditable]') ?? this.#container;
+		target.focus();
+	}
+
+	/** Attachment — auto-pauses/resumes listening on focus/blur of container.
+	 *  IMPORTANT: Does not read $state in the body to avoid Svelte re-running
+	 *  the attachment on every enabled/listening change. All reactive reads
+	 *  happen inside event handlers (which don't create reactive dependencies). */
 	autoListen = (node: HTMLElement) => {
 		this.#container = node;
-
-		// If container already has focus when attachment mounts, start immediately
-		if (this.enabled && node.contains(document.activeElement)) {
-			this.#start();
-		}
 
 		const handleFocusIn = () => {
 			if (this.enabled) {
@@ -100,9 +84,19 @@ export class VoiceInputController {
 		};
 
 		const handleFocusOut = (e: FocusEvent) => {
-			if (!this.enabled) return;
 			const goingTo = e.relatedTarget as Node | null;
+			if (!this.enabled) return;
 			if (goingTo && node.contains(goingTo)) return;
+
+			// When relatedTarget is null, focus moved to a non-focusable element
+			// (page background) OR the browser/speech prompt stole focus.
+			// Check if focus actually left the container via activeElement.
+			if (!goingTo) {
+				// If activeElement is still inside the container, focus didn't
+				// really leave (e.g., Chrome speech prompt stole then returned).
+				if (node.contains(document.activeElement)) return;
+			}
+
 			this.#stop();
 		};
 

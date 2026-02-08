@@ -1021,11 +1021,11 @@ These constraints don't apply to the full RIFT editor, which uses ProseMirror (s
 
 The composition model (voice input = IME composition) frames the design. Two implementation options:
 
-1. **Dispatch real CompositionEvents** — the textarea natively handles uncommitted text display (underlined by default). Any code already handling composition correctly (framework input bindings, etc.) just works. Risk: browsers may not expect synthetic composition events from JavaScript; behavior could be inconsistent.
+1. **~~Dispatch real CompositionEvents~~** — ~~the textarea natively handles uncommitted text display (underlined by default).~~ **Ruled out.** Tested in `static/test-composition.html`: synthetic `CompositionEvent`s dispatched from JavaScript fire on the DOM (listeners see them) but the browser's rendering pipeline does not apply composition styling (underline). The composition underline is driven by the platform's text input service (actor (3) in the EditContext pipeline), not by DOM events. Also tested `InputEvent` with `isComposing: true` and `inputType: insertCompositionText` — same result: no visual effect.
 
 2. **Mirror the pattern conceptually** — implement the same lifecycle internally using the transparent textarea overlay for display. More control, more portable across frameworks. Avoids colliding with a real IME session if the user has one active.
 
-Option 2 with the overlay technique is the recommended approach. The mental model from option 1 is correct — **voice input is a composition session** — but the overlay gives full control over interim display without depending on browser composition rendering behavior.
+**Option 2 is the only viable approach.** The mental model from option 1 is correct — voice input is a composition session — but the browser won't render it as one unless the OS text input service initiates it. The overlay gives full control over interim display without depending on browser internals.
 
 ### MVP Scope
 

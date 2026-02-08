@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synthetic CompositionEvent Test</title>
+<style>
+	body {
+		font-family: system-ui, sans-serif;
+		max-width: 700px;
+		margin: 40px auto;
+		padding: 0 20px;
+	}
+	textarea {
+		width: 100%;
+		height: 80px;
+		font-size: 18px;
+		font-family: monospace;
+		padding: 8px;
+		margin: 8px 0 20px;
+	}
+	button {
+		font-size: 14px;
+		padding: 6px 16px;
+		margin-right: 8px;
+		cursor: pointer;
+	}
+	#log {
+		font-family: monospace;
+		font-size: 13px;
+		background: #f5f5f5;
+		padding: 12px;
+		max-height: 300px;
+		overflow-y: auto;
+		white-space: pre-wrap;
+	}
+	h1 { font-size: 20px; }
+	h2 { font-size: 16px; margin-top: 24px; }
+	p { font-size: 14px; color: #555; }
+</style>
+</head>
+<body>
+
+<h1>Synthetic CompositionEvent Test</h1>
+<p>Does dispatching synthetic CompositionEvents on a textarea cause the browser to render composition styling (underline)?</p>
+
+<h2>1. Real IME reference (type here with an IME to compare)</h2>
+<textarea id="real">Type here with a CJK IME to see native composition underline</textarea>
+
+<h2>2. Synthetic composition test</h2>
+<textarea id="synthetic" readonly></textarea>
+<div>
+	<button id="btn-start">compositionstart</button>
+	<button id="btn-update1">update: "hel"</button>
+	<button id="btn-update2">update: "hello"</button>
+	<button id="btn-update3">update: "hello world"</button>
+	<button id="btn-end">compositionend</button>
+	<button id="btn-auto">Run full sequence</button>
+</div>
+
+<h2>3. InputEvent with isComposing</h2>
+<textarea id="inputtest" readonly></textarea>
+<div>
+	<button id="btn-input">Dispatch input (isComposing: true)</button>
+</div>
+
+<h2>Event log</h2>
+<div id="log"></div>
+
+<script>
+const synthetic = document.getElementById('synthetic');
+const inputtest = document.getElementById('inputtest');
+const log = document.getElementById('log');
+
+function logEvent(msg) {
+	log.textContent += msg + '\n';
+	log.scrollTop = log.scrollHeight;
+}
+
+// Listen for all composition and input events on the synthetic textarea
+['compositionstart', 'compositionupdate', 'compositionend', 'input', 'beforeinput'].forEach(type => {
+	synthetic.addEventListener(type, e => {
+		const extra = e.data !== undefined ? ` data="${e.data}"` : '';
+		const composing = e.isComposing !== undefined ? ` isComposing=${e.isComposing}` : '';
+		logEvent(`[synthetic] ${e.type}${extra}${composing}`);
+	});
+	inputtest.addEventListener(type, e => {
+		const extra = e.data !== undefined ? ` data="${e.data}"` : '';
+		const composing = e.isComposing !== undefined ? ` isComposing=${e.isComposing}` : '';
+		logEvent(`[inputtest] ${e.type}${extra}${composing}`);
+	});
+});
+
+// Also log on the real textarea for comparison
+['compositionstart', 'compositionupdate', 'compositionend'].forEach(type => {
+	document.getElementById('real').addEventListener(type, e => {
+		logEvent(`[real] ${e.type} data="${e.data}"`);
+	});
+});
+
+function dispatchComposition(target, type, data) {
+	const event = new CompositionEvent(type, {
+		bubbles: true,
+		cancelable: true,
+		data: data
+	});
+	logEvent(`→ dispatching ${type} data="${data}"`);
+	target.dispatchEvent(event);
+}
+
+function setValueAndDispatch(target, value, compositionType, data) {
+	target.value = value;
+	dispatchComposition(target, compositionType, data);
+}
+
+document.getElementById('btn-start').addEventListener('click', () => {
+	synthetic.value = '';
+	dispatchComposition(synthetic, 'compositionstart', '');
+});
+
+document.getElementById('btn-update1').addEventListener('click', () => {
+	setValueAndDispatch(synthetic, 'hel', 'compositionupdate', 'hel');
+});
+
+document.getElementById('btn-update2').addEventListener('click', () => {
+	setValueAndDispatch(synthetic, 'hello', 'compositionupdate', 'hello');
+});
+
+document.getElementById('btn-update3').addEventListener('click', () => {
+	setValueAndDispatch(synthetic, 'hello world', 'compositionupdate', 'hello world');
+});
+
+document.getElementById('btn-end').addEventListener('click', () => {
+	dispatchComposition(synthetic, 'compositionend', synthetic.value);
+	logEvent('--- composition ended, value: "' + synthetic.value + '"');
+});
+
+document.getElementById('btn-auto').addEventListener('click', async () => {
+	logEvent('\n=== Auto sequence start ===');
+	synthetic.value = '';
+
+	dispatchComposition(synthetic, 'compositionstart', '');
+	await delay(500);
+
+	setValueAndDispatch(synthetic, 'hel', 'compositionupdate', 'hel');
+	await delay(600);
+
+	setValueAndDispatch(synthetic, 'hello', 'compositionupdate', 'hello');
+	await delay(600);
+
+	setValueAndDispatch(synthetic, 'hello world', 'compositionupdate', 'hello world');
+	await delay(600);
+
+	dispatchComposition(synthetic, 'compositionend', 'hello world');
+	logEvent('=== Auto sequence end ===\n');
+});
+
+document.getElementById('btn-input').addEventListener('click', () => {
+	inputtest.value = 'composing text';
+	const event = new InputEvent('input', {
+		bubbles: true,
+		cancelable: true,
+		data: 'composing text',
+		inputType: 'insertCompositionText',
+		isComposing: true
+	});
+	logEvent('→ dispatching InputEvent with isComposing=true, inputType=insertCompositionText');
+	inputtest.dispatchEvent(event);
+});
+
+function delay(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+logEvent('Ready. Click buttons or run the full sequence.');
+logEvent('Look for underlined text in the textarea — that would mean the browser renders composition styling.');
+logEvent('');
+</script>
+
+</body>
+</html>

@@ -104,6 +104,41 @@ Indirect evidence:
 
 The token is only needed to **establish** the WebSocket connection. Once connected, the session stays alive regardless of token expiry. In practice, you mint once when the user starts recording, not on a timer.
 
+### Utterance separation does not require WS restarts
+
+All providers support in-band finalize commands to separate utterances without closing the connection:
+
+| Provider       | Finalize command                       | WS stays open? |
+| -------------- | -------------------------------------- | -------------- |
+| **Deepgram**   | `{"type":"Finalize"}`                  | Yes            |
+| **Soniox**     | `{"type":"finalize"}` → `<fin>` marker | Yes            |
+| **AssemblyAI** | `{"type":"ForceEndpoint"}`             | Yes            |
+| **ElevenLabs** | `commit: true` on audio chunk          | Yes            |
+
+One token → one WebSocket → many finalized utterances over the session's lifetime.
+
+### Focus/blur reconnect cycle and token re-minting
+
+RIFT auto-starts/stops transcription on window focus/blur. This closes and reopens the WebSocket on every tab switch. Each reconnect requires a new temp token for providers that need one.
+
+**Impact by provider:**
+
+| Provider       | Billing model                  | Reconnect token cost                  | Reconnect latency                |
+| -------------- | ------------------------------ | ------------------------------------- | -------------------------------- |
+| **Deepgram**   | Per audio processed            | None (direct WS auth)                 | ~100ms (WS open only)            |
+| **Soniox**     | **Wall-clock stream duration** | Reuse token if <1hr old               | ~200-500ms (API route + WS open) |
+| **AssemblyAI** | **Session time incl. silence** | **New token every time** (single-use) | ~200-500ms (API route + WS open) |
+| **ElevenLabs** | Unknown                        | Unknown                               | ~200-500ms (API route + WS open) |
+
+AssemblyAI is the worst case: every focus/blur cycle means a round-trip to the SvelteKit API route → AssemblyAI REST API → new token → new WebSocket. A user bouncing between editor and RIFT could trigger dozens of these per hour.
+
+**Mitigation options:**
+
+- **Cache tokens client-side** — works for Soniox (reuse until near 1hr expiry), not for AssemblyAI (single-use).
+- **Mint eagerly on page load** — have a fresh token ready before the user focuses. Wastes tokens if the user never returns, but eliminates latency on focus.
+- **Don't close on blur for duration-billed providers** — just stop sending audio. Saves reconnect latency but costs money for idle time (Soniox $0.12/hr, AssemblyAI $0.15/hr of silence).
+- **Debounce blur** — wait 5-10s before closing. Brief tab switches don't trigger a reconnect cycle.
+
 ---
 
 ## SvelteKit API Route as Solution
@@ -118,9 +153,9 @@ Returns: { "token": "temp-token", "expiresIn": 60 }
 
 The route receives the user's API key from the client (already stored in localStorage), calls the provider's REST endpoint server-side (no CORS), and returns the temp token. The user's key transits through the server but is not stored — used for the single outbound call and discarded.
 
-**Cost:** RIFT can no longer deploy as a fully static SPA. Requires `adapter-node` or `adapter-vercel` instead of `adapter-static`.
+**Cost:** Already on Vercel, so no deployment change needed — `adapter-vercel` supports server routes.
 
-**Complexity:** Trivial — ~20 lines per provider, no database, no state, no server-side auth. Called once per recording session, not on a hot path.
+**Complexity:** Trivial — ~20 lines per provider, no database, no state, no server-side auth. Called once per recording session (more with focus/blur cycles — see above).
 
 ---
 
@@ -151,6 +186,6 @@ As a serverless browser SPA, RIFT can only use providers that either:
 
 To unlock AssemblyAI, Soniox, or ElevenLabs, one of these is needed:
 
-- **SvelteKit server route** (`POST /api/token`) — simplest option, ~20 lines per provider, called once per session. See "SvelteKit API Route as Solution" above.
+- **SvelteKit server route** (`POST /api/token`) — simplest option, ~20 lines per provider. Already on Vercel so no deployment change needed. See "SvelteKit API Route as Solution" above.
 - **Tauri desktop** (`@tauri-apps/plugin-http`) — Tauri's fetch bypasses CORS entirely. No server needed.
-- **Edge function proxy** (Cloudflare Worker, etc.) — keeps the app as a static SPA but adds an external dependency.
+- **Edge function proxy** (Cloudflare Worker, etc.) — unnecessary given existing Vercel deployment.

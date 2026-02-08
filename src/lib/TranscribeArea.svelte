@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { HTMLTextareaAttributes } from 'svelte/elements';
 	import type { Transcript, TranscriptEvent } from '$lib/types.js';
@@ -32,9 +31,16 @@
 	let insertionStart: number | null = $state(null);
 	let insertionEnd: number | null = $state(null);
 
-	// Desired cursor position after Svelte updates the textarea value.
-	// null = don't interfere (let browser handle, e.g. after user typing).
-	let cursorAfterUpdate: number | null = $state(null);
+	// Schedule cursor restore after Svelte's DOM flush.
+	// Called directly from handlers that know the desired position —
+	// no effect needed, rAF runs after Svelte updates the textarea.
+	function restoreCursor(pos: number) {
+		const el = textareaEl;
+		if (!el) return;
+		requestAnimationFrame(() => {
+			el.setSelectionRange(pos, pos);
+		});
+	}
 
 	// After a final for segmentId N, ignore late-arriving interims for
 	// segments <= N. Web Speech API fires interleaved multi-segment results
@@ -94,25 +100,6 @@
 		};
 	});
 
-	// Restore cursor position after Svelte writes displayValue to textarea.
-	// Uses requestAnimationFrame to schedule after Svelte's DOM flush,
-	// preventing the controlled value={displayValue} write from displacing
-	// the cursor on the next render cycle (which caused ENTER/punctuation bugs).
-	$effect(() => {
-		displayValue; // reactive dependency
-		untrack(() => {
-			if (cursorAfterUpdate != null && textareaEl) {
-				const pos = cursorAfterUpdate;
-				const el = textareaEl;
-				cursorAfterUpdate = null;
-				// Schedule after Svelte's DOM flush so the value write lands first
-				requestAnimationFrame(() => {
-					el.setSelectionRange(pos, pos);
-				});
-			}
-		});
-	});
-
 	// Flag to distinguish voice-dispatched InputEvents from real user input
 	let isVoiceCommit = false;
 
@@ -163,7 +150,7 @@
 			value = before + spaceBefore + text + spaceAfter + after;
 
 			// Place cursor right after the inserted text
-			cursorAfterUpdate = (before + spaceBefore + text + spaceAfter).length;
+			restoreCursor((before + spaceBefore + text + spaceAfter).length);
 
 			// Dispatch InputEvent so consumer oninput handlers fire —
 			// voice commits should be indistinguishable from keyboard input.
@@ -200,7 +187,7 @@
 			const sBefore = raw && needsSpaceBefore(before) ? ' ' : '';
 			const after = insertionEnd != null ? value.slice(insertionEnd) : '';
 			const sAfter = raw && needsSpaceAfter(after) ? ' ' : '';
-			cursorAfterUpdate = before.length + sBefore.length + raw.length + sAfter.length;
+			restoreCursor(before.length + sBefore.length + raw.length + sAfter.length);
 		}
 	}
 
@@ -227,9 +214,6 @@
 		}
 
 		value = rawValue;
-
-		// Don't interfere with cursor — let browser handle natively
-		cursorAfterUpdate = null;
 
 		// Forward to consumer's oninput handler
 		oninput?.(e);

@@ -13,6 +13,7 @@ import { WebSpeechSource } from '$lib/sources/web-speech.svelte';
 
 export class VoiceInputController {
 	#source: WebSpeechSource | null = null;
+	#container: HTMLElement | null = null;
 
 	enabled = $state(false);
 
@@ -63,11 +64,30 @@ export class VoiceInputController {
 				}
 			}
 			this.enabled = true;
+
+			// Focus the first textarea/input inside the autoListen container
+			// so the user can start speaking immediately without an extra click.
+			// Skip if a text input already has focus (user clicked into one).
+			if (this.#container) {
+				const active = document.activeElement;
+				const activeIsInput =
+					active instanceof HTMLTextAreaElement ||
+					active instanceof HTMLInputElement ||
+					(active instanceof HTMLElement && active.isContentEditable);
+				if (!activeIsInput || !this.#container.contains(active)) {
+					const target = this.#container.querySelector<HTMLElement>(
+						'textarea, input, [contenteditable]'
+					);
+					target?.focus();
+				}
+			}
 		}
 	};
 
 	/** Attachment — auto-pauses/resumes listening on focus/blur of container. */
 	autoListen = (node: HTMLElement) => {
+		this.#container = node;
+
 		// If container already has focus when attachment mounts, start immediately
 		if (this.enabled && node.contains(document.activeElement)) {
 			this.#start();
@@ -92,6 +112,7 @@ export class VoiceInputController {
 		return () => {
 			node.removeEventListener('focusin', handleFocusIn);
 			node.removeEventListener('focusout', handleFocusOut);
+			this.#container = null;
 		};
 	};
 }

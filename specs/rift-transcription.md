@@ -977,37 +977,116 @@ The component manages the composition lifecycle internally:
 
 **What the component owns:** composition lifecycle (interim→final), visual distinction of uncommitted text, cursor/insertion behavior
 
-### Implementation Options
-
-1. **Dispatch real CompositionEvents** — the textarea/contenteditable natively handles uncommitted text display (underlined by default). Any code already handling composition correctly (framework input bindings, etc.) just works. Risk: browsers may not expect synthetic composition events from JavaScript; behavior could be inconsistent.
-
-2. **Mirror the pattern conceptually** — implement the same lifecycle internally but handle the display yourself (custom events, ProseMirror decorations, etc.). More control, more portable across frameworks. Avoids colliding with a real IME session if the user has one active.
-
-Option 2 is more practical for a prototype, but the mental model from option 1 is correct: **voice input is a composition session, and the TranscribeArea is a text input that treats voice the same way the platform already treats IME and handwriting.**
-
-### Interim Text Display
+### Interim Text Display: Transparent Textarea Overlay
 
 The key challenge: a plain textarea can't style inline ranges. Interim (unconfirmed) text needs visual distinction from committed text.
 
-Approaches:
+The solution borrows a technique from [OverType](https://overtype.dev): a transparent `<textarea>` layered over a styled `<div>`. The textarea handles all input natively (keyboard, paste, selection, undo/redo, mobile keyboards, spellcheck). The div underneath renders the same text with visual distinction for interim ranges.
 
-- **Contenteditable or ProseMirror** — can style arbitrary ranges (underline, gray, etc.)
-- **Layered** — textarea + overlay for interim text styling
-- **Separate region** — show interim text above/below the committed text area
+```
+┌─────────────────────────────────────────────┐
+│ Hello world I am still speaking...          │  ← textarea (transparent text,
+│                                             │     visible caret only)
+│                                             │
+└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│ Hello world I am still speaking...          │  ← preview div (styled —
+│             ^^^^^^^^^^^^^^^^^^^^^^^^           │     interim text gray/underlined)
+│                                             │
+└─────────────────────────────────────────────┘
+```
 
-This is the primary reason the full RIFT editor uses ProseMirror (see below), but a simpler TranscribeArea variant could use the layered or separate-region approach for integration into apps that don't need the full rich editor.
+The CSS trick is minimal:
+
+```css
+textarea {
+	background: transparent;
+	color: transparent;
+	caret-color: black; /* cursor stays visible */
+	position: absolute; /* overlays the preview div */
+}
+```
+
+The textarea and preview div use identical monospace font, size, padding, and line-height, so characters align perfectly. The textarea value is the source of truth; the preview div is a reactive render of the same string with interim spans wrapped in styled elements.
+
+**Constraints (acceptable for TranscribeArea):**
+
+- **Monospace font required** — variable-width fonts break character alignment between layers. Fine for a voice input component; the full RIFT editor (Tiptap/ProseMirror) handles proportional fonts.
+- **Fixed font size** — all text the same size. Fine for single-purpose input.
+- **No rich formatting in the textarea** — bold, headers, etc. aren't possible. Not needed here; TranscribeArea is for text capture, not document editing.
+
+These constraints don't apply to the full RIFT editor, which uses ProseMirror (see below).
+
+### Implementation Options
+
+The composition model (voice input = IME composition) frames the design. Two implementation options:
+
+1. **Dispatch real CompositionEvents** — the textarea natively handles uncommitted text display (underlined by default). Any code already handling composition correctly (framework input bindings, etc.) just works. Risk: browsers may not expect synthetic composition events from JavaScript; behavior could be inconsistent.
+
+2. **Mirror the pattern conceptually** — implement the same lifecycle internally using the transparent textarea overlay for display. More control, more portable across frameworks. Avoids colliding with a real IME session if the user has one active.
+
+Option 2 with the overlay technique is the recommended approach. The mental model from option 1 is correct — **voice input is a composition session** — but the overlay gives full control over interim display without depending on browser composition rendering behavior.
+
+### MVP Scope
+
+The first implementation validates the input contract and overlay technique with minimal complexity:
+
+**In scope:**
+
+- Transparent textarea over styled preview div (OverType technique)
+- `handleTranscript()` method receives `Transcript` events
+- Interim text (`isFinal: false`) displayed inline with visual distinction (gray/underlined in preview div)
+- Final text (`isFinal: true`) committed into textarea value
+- Keyboard and voice input coexist on the same element
+- `value` / `bind:value` reflects committed text
+
+**Deferred:**
+
+- `segmentId` tracking (concurrent/overlapping interims)
+- Cursor-position insertion (finals append at end only)
+- Composition interrupt on cursor move
+- Multiple simultaneous composition sessions
+
+This is the simplest thing that proves: (a) the overlay technique works for inline interim styling, (b) the event-driven input contract is correct, and (c) voice and keyboard input coexist naturally.
+
+### Two Components, One Contract
+
+TranscribeArea and the full RIFT Editor are **separate components for different use cases**, not stages of one migration. They share the same input contract:
+
+|                           | **TranscribeArea**                                             | **RIFT Editor**                                   |
+| ------------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
+| **Use case**              | Simple voice-enabled text input                                | Rich transcription editor with metadata           |
+| **Rendering**             | Textarea + transparent overlay                                 | Tiptap / ProseMirror                              |
+| **Input contract**        | `handleTranscript(transcript)`                                 | `handleTranscript(transcript)`                    |
+| **Fonts**                 | Monospace (overlay constraint)                                 | Any (ProseMirror handles layout)                  |
+| **Interim display**       | Styled span in preview div                                     | ProseMirror decoration                            |
+| **Rich spans / metadata** | No                                                             | Yes (word-level timestamps, confidence, speaker)  |
+| **Multiple cursors**      | No                                                             | Yes (user cursor + transcription insertion point) |
+| **Complexity**            | Minimal — one CSS trick + event handler                        | Full editor framework                             |
+| **Good for**              | Chat input, search bars, simple forms, embedding in other apps | RIFT's primary editing surface                    |
+
+Consumer code that pushes `Transcript` events is identical for both:
+
+```typescript
+backend.onResult = (transcript) => {
+	// Same call regardless of which component is on the page
+	component.handleTranscript(transcript);
+};
+```
+
+TranscribeArea is not a stepping stone to be discarded — it's a lightweight option for integrations that don't need rich editing. Apps like Whispering or Handy could ship TranscribeArea today and never need the full editor.
 
 ---
 
 ## Editor Implementation
 
-### Why Not Textarea?
+### Why Not Textarea for the Full Editor?
 
-Regular `<textarea>` won't work for the full RIFT editor because we need:
+The TranscribeArea (textarea + overlay) handles simple voice input well, but the full RIFT editor needs capabilities beyond what a textarea can provide:
 
 1. **Rich spans with metadata** — each word/phrase knows its origin, audio ref, timestamps
 2. **Multiple cursors/anchors** — transcription insertion point vs user cursor
-3. **Custom rendering** — interim text styling, confidence highlighting
+3. **Custom rendering** — confidence highlighting, speaker colors, proportional fonts
 4. **Programmatic manipulation** — inserting at arbitrary positions while user types elsewhere
 
 ### Library Options

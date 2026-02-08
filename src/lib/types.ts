@@ -72,6 +72,39 @@ export type Transcript = {
 };
 
 // ---------------------------------------------------------------------------
+// Transcript event — global broadcast mechanism
+// Sources dispatch this on document; receivers (transcribable action,
+// TranscribeArea) listen when focused. No manual wiring needed.
+// ---------------------------------------------------------------------------
+
+export const TRANSCRIPT_EVENT = 'rift:transcript';
+
+export type TranscriptEvent = CustomEvent<Transcript>;
+
+/** Dispatch a Transcript as a CustomEvent on document. */
+export function broadcastTranscript(transcript: Transcript): void {
+	document.dispatchEvent(
+		new CustomEvent<Transcript>(TRANSCRIPT_EVENT, {
+			detail: transcript
+		})
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Smart spacing — shared between transcribable action and TranscribeArea
+// ---------------------------------------------------------------------------
+
+/** Add a space before text if the preceding character isn't whitespace. */
+export function needsSpaceBefore(before: string): boolean {
+	return before.length > 0 && !/\s$/.test(before);
+}
+
+/** Add a space after text if the following character isn't whitespace. */
+export function needsSpaceAfter(after: string): boolean {
+	return after.length > 0 && !/^\s/.test(after);
+}
+
+// ---------------------------------------------------------------------------
 // TranscriptionSource — push-based interface
 // See: specs/rift-transcription.md "Unified Interface"
 // ---------------------------------------------------------------------------

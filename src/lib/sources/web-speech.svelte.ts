@@ -13,7 +13,7 @@
 
 import { Ok } from 'wellcrafted/result';
 import type { TranscriptionSource, Transcript } from '$lib/types.js';
-import { SourceErr } from '$lib/types.js';
+import { SourceErr, broadcastTranscript } from '$lib/types.js';
 
 // ---------------------------------------------------------------------------
 // Browser type shim — SpeechRecognition is not in lib.dom.d.ts everywhere
@@ -73,14 +73,12 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | null {
 // WebSpeechSource
 // ---------------------------------------------------------------------------
 
-export function createWebSpeechSource(lang = 'en-US'): WebSpeechSource {
-	return new WebSpeechSource(lang);
-}
-
 export class WebSpeechSource implements TranscriptionSource {
 	readonly name = 'web-speech';
 
-	onResult: ((result: Transcript) => void) | null = null;
+	/** Callback for results. Defaults to broadcastTranscript (dispatches
+	 *  CustomEvent on document). Override for custom routing. */
+	onResult: ((result: Transcript) => void) | null = broadcastTranscript;
 	onError: ((error: string, message: string) => void) | null = null;
 
 	/** Reactive — true while recognition is active. */
@@ -149,12 +147,17 @@ export class WebSpeechSource implements TranscriptionSource {
 		recognition.onresult = (event: SpeechRecognitionEvent) => {
 			if (!this.onResult) return;
 
+			// Snapshot nextSegmentId for stable IDs within this batch.
+			// Bumping mid-loop would rebase later segments, giving them
+			// new IDs that bypass TranscribeArea's orphan-rejection logic.
+			const baseSegmentId = this.nextSegmentId;
+			let maxFinalSegmentId = -1;
+
 			for (let i = event.resultIndex; i < event.results.length; i++) {
 				const result = event.results[i];
 				const alt = result[0];
 
-				// Use resultIndex as segmentId — groups interims with their final
-				const segmentId = this.nextSegmentId + i;
+				const segmentId = baseSegmentId + i;
 
 				const transcript: Transcript = {
 					text: alt.transcript,
@@ -166,10 +169,15 @@ export class WebSpeechSource implements TranscriptionSource {
 
 				this.onResult(transcript);
 
-				// After a final, bump the segment counter past this index
-				if (result.isFinal) {
-					this.nextSegmentId = segmentId + 1;
+				if (result.isFinal && segmentId > maxFinalSegmentId) {
+					maxFinalSegmentId = segmentId;
 				}
+			}
+
+			// Bump segment counter after the loop so all results in
+			// the same batch get stable, consistent IDs.
+			if (maxFinalSegmentId >= 0) {
+				this.nextSegmentId = maxFinalSegmentId + 1;
 			}
 		};
 

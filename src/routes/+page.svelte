@@ -1,29 +1,51 @@
 <script lang="ts">
 	import { isErr } from 'wellcrafted/result';
 	import TranscribeArea from '$lib/TranscribeArea.svelte';
+	import { transcribable } from '$lib/transcribable.js';
 	import { WebSpeechSource } from '$lib/sources/web-speech.svelte';
-	import type { Transcript } from '$lib/types.js';
+	import { TRANSCRIPT_EVENT } from '$lib/types.js';
+	import type { Transcript, TranscriptEvent } from '$lib/types.js';
 
 	let source = $state<WebSpeechSource | null>(null);
-	let transcribeArea: TranscribeArea | undefined = $state();
-	let value = $state('');
 	let autoListenEnabled = $state(false);
 	let containerEl: HTMLElement | undefined = $state();
+
+	// Each level gets its own value
+	let value0 = $state('');
+	let value1 = $state('');
+	let value2 = $state('');
+
+	// Event log — observes rift:transcript directly
 	let nextEventId = 0;
 	let eventLog = $state<Array<{ id: number; time: string; transcript: Transcript }>>([]);
+
+	$effect(() => {
+		function logTranscript(e: Event) {
+			const transcript = (e as TranscriptEvent).detail;
+			const time = new Date().toLocaleTimeString('en-US', {
+				hour12: false,
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit'
+			});
+			eventLog = [{ id: nextEventId++, time, transcript }, ...eventLog].slice(0, 50);
+		}
+		document.addEventListener(TRANSCRIPT_EVENT, logTranscript);
+		return () => document.removeEventListener(TRANSCRIPT_EVENT, logTranscript);
+	});
+
+	// --- Source management ---
 
 	function ensureSource() {
 		if (!source) {
 			source = new WebSpeechSource();
-			source.onResult = handleResult;
+			// onResult defaults to broadcastTranscript — no wiring needed!
 			source.onError = handleSourceError;
 		}
 		return source;
 	}
 
 	function handleSourceError(error: string, message: string) {
-		// Fatal error from source — disable auto-listen so focusin
-		// doesn't keep retrying a broken recognition instance.
 		autoListenEnabled = false;
 		console.error(`[Voice Input] Fatal error: ${error} — ${message}`);
 	}
@@ -44,17 +66,15 @@
 
 	function toggleVoiceInput() {
 		if (autoListenEnabled) {
-			// Disable voice input mode
 			autoListenEnabled = false;
 			stopListening();
 		} else {
-			// Enable voice input mode — button click satisfies user gesture requirement
 			const s = ensureSource();
 			if (!s.listening) {
 				const result = s.startListening();
 				if (isErr(result)) {
 					console.error(result.error.message);
-					return; // Don't enable auto-listen if start failed
+					return;
 				}
 			}
 			autoListenEnabled = true;
@@ -62,9 +82,6 @@
 	}
 
 	// --- Auto-listen on focus/blur ---
-	// Uses focusin/focusout on a container wrapping textarea + controls.
-	// focusout's relatedTarget tells us WHERE focus is going — if it's
-	// still inside the container, we don't stop.
 
 	function handleFocusIn() {
 		if (autoListenEnabled) {
@@ -79,32 +96,24 @@
 		stopListening();
 	}
 
-	let copied = $state(false);
+	// --- Helpers ---
 
-	async function copyToClipboard() {
-		await navigator.clipboard.writeText(value);
-		copied = true;
+	let copied = $state<0 | 1 | 2 | null>(null);
+
+	async function copyToClipboard(level: 0 | 1 | 2) {
+		const values = [value0, value1, value2];
+		await navigator.clipboard.writeText(values[level]);
+		copied = level;
 		setTimeout(() => {
-			copied = false;
+			copied = null;
 		}, 1500);
-	}
-
-	function handleResult(transcript: Transcript) {
-		const time = new Date().toLocaleTimeString('en-US', {
-			hour12: false,
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit'
-		});
-		eventLog = [{ id: nextEventId++, time, transcript }, ...eventLog].slice(0, 50);
-		transcribeArea?.handleTranscript(transcript);
 	}
 </script>
 
 <main>
-	<h1>RIFT TranscribeArea MVP</h1>
+	<h1>RIFT TranscribeArea</h1>
 	<p class="intro">
-		A textarea that accepts voice input with inline interim styling. See the <a
+		Voice input that works like a textarea. Focus any input below and speak. See the <a
 			href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
 			>spec</a
 		> for details.
@@ -117,29 +126,61 @@
 		onfocusin={handleFocusIn}
 		onfocusout={handleFocusOut}
 	>
-		<TranscribeArea bind:this={transcribeArea} bind:value />
-
 		<div class="controls">
 			<button onclick={toggleVoiceInput}>
 				{autoListenEnabled ? 'Disable Voice Input' : 'Enable Voice Input'}
-			</button>
-			<button onclick={copyToClipboard} disabled={!value}>
-				{copied ? 'Copied!' : 'Copy'}
 			</button>
 			<span class="status">
 				<span class="dot" class:active={source?.listening}></span>
 				{source?.listening ? 'Listening — Web Speech API' : 'Idle'}
 			</span>
 		</div>
+
+		<section class="level">
+			<h2>Level 2: TranscribeArea</h2>
+			<p class="level-desc">Full experience. Interim text shown inline with dotted underline.</p>
+			<TranscribeArea bind:value={value2} placeholder="Type or speak (with interims)..." />
+			<div class="level-controls">
+				<button onclick={() => copyToClipboard(2)} disabled={!value2}>
+					{copied === 2 ? 'Copied!' : 'Copy'}
+				</button>
+				<span class="char-count">{value2.length} chars</span>
+			</div>
+		</section>
+
+		<section class="level">
+			<h2>Level 1: textarea + <code>use:transcribable</code></h2>
+			<p class="level-desc">Voice input via action. Finals insert at cursor. No interim styling.</p>
+			<textarea
+				use:transcribable
+				class="plain-textarea"
+				bind:value={value1}
+				placeholder="Type or speak (finals only)..."
+			></textarea>
+			<div class="level-controls">
+				<button onclick={() => copyToClipboard(1)} disabled={!value1}>
+					{copied === 1 ? 'Copied!' : 'Copy'}
+				</button>
+				<span class="char-count">{value1.length} chars</span>
+			</div>
+		</section>
+
+		<section class="level">
+			<h2>Level 0: Plain textarea</h2>
+			<p class="level-desc">No voice input. Baseline for comparison.</p>
+			<textarea class="plain-textarea" bind:value={value0} placeholder="Type here (no voice)..."
+			></textarea>
+			<div class="level-controls">
+				<button onclick={() => copyToClipboard(0)} disabled={!value0}>
+					{copied === 0 ? 'Copied!' : 'Copy'}
+				</button>
+				<span class="char-count">{value0.length} chars</span>
+			</div>
+		</section>
 	</div>
 
 	<details class="debug" open>
 		<summary>Debug</summary>
-
-		<div class="debug-section">
-			<strong>value</strong> ({value.length} chars):
-			<pre>{value || '(empty)'}</pre>
-		</div>
 
 		<div class="debug-section">
 			<strong>Event Log</strong> ({eventLog.length} events):
@@ -176,6 +217,18 @@
 		margin-bottom: 4px;
 	}
 
+	h2 {
+		font-size: 0.95rem;
+		margin: 0 0 2px;
+	}
+
+	code {
+		background: #f0f0f0;
+		padding: 1px 4px;
+		border-radius: 3px;
+		font-size: 0.85em;
+	}
+
 	.intro {
 		color: #555;
 		font-size: 14px;
@@ -186,12 +239,54 @@
 		color: #4a90d9;
 	}
 
+	.level {
+		margin-bottom: 20px;
+	}
+
+	.level-desc {
+		color: #888;
+		font-size: 13px;
+		margin: 0 0 6px;
+	}
+
+	.level-controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 4px;
+	}
+
+	.char-count {
+		font-size: 12px;
+		color: #999;
+	}
+
+	.plain-textarea {
+		font-family: 'Courier New', Courier, monospace;
+		font-size: 14px;
+		line-height: 1.5;
+		padding: 8px;
+		margin: 0;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		width: 100%;
+		min-height: 80px;
+		box-sizing: border-box;
+		resize: vertical;
+	}
+
+	.plain-textarea:focus {
+		outline: 2px solid #4a90d9;
+		outline-offset: -1px;
+	}
+
 	.controls {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		margin-top: 8px;
-		margin-bottom: 16px;
+		margin-bottom: 20px;
+		padding-bottom: 12px;
+		border-bottom: 1px solid #eee;
 	}
 
 	button {
@@ -250,16 +345,6 @@
 
 	.debug-section {
 		margin-bottom: 12px;
-	}
-
-	pre {
-		background: #f5f5f5;
-		padding: 8px;
-		border-radius: 4px;
-		margin: 4px 0;
-		white-space: pre-wrap;
-		word-break: break-all;
-		font-size: 12px;
 	}
 
 	.event-log {

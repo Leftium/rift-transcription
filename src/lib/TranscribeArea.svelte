@@ -1,29 +1,46 @@
 <script lang="ts">
-	import type { Transcript } from '$lib/types.js';
+	import { untrack } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
+	import type { Transcript, TranscriptEvent } from '$lib/types.js';
+	import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
 
 	interface Props {
 		value: string;
 		placeholder?: string;
 		disabled?: boolean;
+		oninput?: (e: Event) => void;
 	}
 
 	let {
 		value = $bindable(''),
 		placeholder = 'Type or speak...',
-		disabled = false
+		disabled = false,
+		oninput
 	}: Props = $props();
 
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
+	let containerEl: HTMLElement | undefined = $state();
 
 	// Track interims per segmentId — Web Speech fires interleaved results for
 	// multiple segments simultaneously (e.g., seg=2 and seg=3 alternating).
-	let interims = $state(new Map<number, string>());
+	// Using SvelteMap for reactive .set()/.delete()/.clear() — but must use
+	// .clear() not reassignment, since the variable isn't $state.
+	const interims = new SvelteMap<number, string>();
 
 	// Insertion range: where voice text replaces in committed value.
 	// Captured from selection on first interim; stays fixed until final commits.
 	// null = no active voice session (next interim will capture selection).
 	let insertionStart: number | null = $state(null);
 	let insertionEnd: number | null = $state(null);
+
+	// Desired cursor position after Svelte updates the textarea value.
+	// null = don't interfere (let browser handle, e.g. after user typing).
+	let cursorAfterUpdate: number | null = $state(null);
+
+	// After a final for segmentId N, ignore late-arriving interims for
+	// segments <= N. Web Speech API fires interleaved multi-segment results
+	// and seg=1 interims can arrive after seg=0's final clears the map.
+	let committedThroughSegment = -1;
 
 	let rawInterimText: string = $derived(Array.from(interims.values()).join('').trim());
 
@@ -36,25 +53,75 @@
 
 	// Apply same smart spacing to interim display so preview matches final commit
 	let interimSpaceBefore: string = $derived(
-		rawInterimText && beforeCursor.length > 0 && !/\s$/.test(beforeCursor) ? ' ' : ''
+		rawInterimText && needsSpaceBefore(beforeCursor) ? ' ' : ''
 	);
 	let interimSpaceAfter: string = $derived(
-		rawInterimText && afterCursor.length > 0 && !/^\s/.test(afterCursor) ? ' ' : ''
+		rawInterimText && needsSpaceAfter(afterCursor) ? ' ' : ''
 	);
 	let interimText: string = $derived(interimSpaceBefore + rawInterimText + interimSpaceAfter);
 
 	// Textarea shows: text before cursor + interim + text after cursor
 	let displayValue: string = $derived(beforeCursor + interimText + afterCursor);
 
-	export function handleTranscript(transcript: Transcript): void {
+	// --- Listen for transcript events on document ---
+
+	function hasFocus(): boolean {
+		const active = document.activeElement;
+		if (!active) return false;
+		// Check if focus is on our textarea or inside our container
+		if (active === textareaEl) return true;
+		if (containerEl?.contains(active)) return true;
+		return false;
+	}
+
+	function handleTranscriptEvent(e: Event) {
+		const transcript = (e as TranscriptEvent).detail;
+
+		if (!hasFocus()) return;
+
+		handleTranscript(transcript);
+	}
+
+	$effect(() => {
+		document.addEventListener(TRANSCRIPT_EVENT, handleTranscriptEvent);
+		return () => {
+			document.removeEventListener(TRANSCRIPT_EVENT, handleTranscriptEvent);
+		};
+	});
+
+	// Restore cursor position after Svelte writes displayValue to textarea.
+	// Reads displayValue to create a reactive dependency so this runs
+	// every time the textarea content actually changes.
+	$effect(() => {
+		displayValue; // reactive dependency
+		untrack(() => {
+			if (cursorAfterUpdate != null && textareaEl) {
+				textareaEl.setSelectionRange(cursorAfterUpdate, cursorAfterUpdate);
+				cursorAfterUpdate = null;
+			}
+		});
+	});
+
+	// Flag to distinguish voice-dispatched InputEvents from real user input
+	let isVoiceCommit = false;
+
+	// --- Transcript handling (internal) ---
+
+	function handleTranscript(transcript: Transcript): void {
 		if (transcript.isFinal) {
-			// Clear ALL interims FIRST — before updating value — so both
-			// changes land in the same reactive tick. Otherwise the stale
-			// orphaned interim (e.g., "cool") is briefly visible alongside
-			// the newly committed final ("this is pretty cool").
+			// Clear ALL interims and reject late-arriving interims for any
+			// segment we've seen. Web Speech fires interleaved multi-segment
+			// results — seg=1 interims can arrive after seg=0's final,
+			// re-populating the cleared map. Track the highest segmentId
+			// across all interims so we reject ALL of them, not just seg=0.
+			let maxSeen = transcript.segmentId;
+			for (const id of interims.keys()) {
+				if (id > maxSeen) maxSeen = id;
+			}
+			committedThroughSegment = maxSeen;
 			const start = insertionStart ?? value.length;
 			const end = insertionEnd ?? start;
-			interims = new Map();
+			interims.clear();
 			insertionStart = null;
 			insertionEnd = null;
 
@@ -67,11 +134,33 @@
 			if (!text) return;
 
 			// Smart spacing: check both edges
-			const needSpaceBefore = before.length > 0 && !/\s$/.test(before);
-			const needSpaceAfter = after.length > 0 && !/^\s/.test(after);
+			const spaceBefore = needsSpaceBefore(before) ? ' ' : '';
+			const spaceAfter = needsSpaceAfter(after) ? ' ' : '';
 
-			value = before + (needSpaceBefore ? ' ' : '') + text + (needSpaceAfter ? ' ' : '') + after;
+			value = before + spaceBefore + text + spaceAfter + after;
+
+			// Place cursor right after the inserted text
+			cursorAfterUpdate = (before + spaceBefore + text + spaceAfter).length;
+
+			// Dispatch InputEvent so consumer oninput handlers fire —
+			// voice commits should be indistinguishable from keyboard input.
+			if (textareaEl) {
+				isVoiceCommit = true;
+				textareaEl.dispatchEvent(
+					new InputEvent('input', {
+						bubbles: true,
+						inputType: 'insertText',
+						data: text
+					})
+				);
+				isVoiceCommit = false;
+			}
 		} else {
+			// Reject late-arriving interims for already-committed segments.
+			// Web Speech fires interleaved results — seg=1 interims can
+			// arrive after seg=0's final cleared the map.
+			if (transcript.segmentId <= committedThroughSegment) return;
+
 			// Capture selection range on first interim of a voice session
 			if (insertionStart == null) {
 				insertionStart = textareaEl?.selectionStart ?? value.length;
@@ -79,27 +168,45 @@
 			}
 
 			interims.set(transcript.segmentId, transcript.text);
-			// Trigger reactivity
-			interims = new Map(interims);
+
+			// Keep cursor at end of interim preview (before afterCursor text)
+			// so caret visually sits at the voice insertion point.
+			const before = insertionStart != null ? value.slice(0, insertionStart) : value;
+			// Compute interim text inline to get the length after spacing
+			const raw = Array.from(interims.values()).join('').trim();
+			const sBefore = raw && needsSpaceBefore(before) ? ' ' : '';
+			const after = insertionEnd != null ? value.slice(insertionEnd) : '';
+			const sAfter = raw && needsSpaceAfter(after) ? ' ' : '';
+			cursorAfterUpdate = before.length + sBefore.length + raw.length + sAfter.length;
 		}
 	}
 
 	function handleInput(e: Event): void {
+		// Voice-dispatched InputEvents: forward to consumer but don't
+		// re-process — value is already updated by handleTranscript.
+		if (isVoiceCommit) {
+			oninput?.(e);
+			return;
+		}
+
 		const target = e.target as HTMLTextAreaElement;
 		const rawValue = target.value;
 
 		// If there was interim text and user typed, interims are implicitly cancelled
 		if (interims.size > 0) {
-			interims = new Map();
+			interims.clear();
 			insertionStart = null;
 			insertionEnd = null;
 		}
 
 		value = rawValue;
+
+		// Forward to consumer's oninput handler
+		oninput?.(e);
 	}
 </script>
 
-<div class="transcribe-area">
+<div class="transcribe-area" bind:this={containerEl}>
 	<!-- Preview div: renders text with interim styling -->
 	<div class="preview" aria-hidden="true">
 		{#if displayValue}

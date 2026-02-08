@@ -7,24 +7,76 @@
 	let source = $state<WebSpeechSource | null>(null);
 	let transcribeArea: TranscribeArea | undefined = $state();
 	let value = $state('');
+	let autoListenEnabled = $state(false);
+	let containerEl: HTMLElement | undefined = $state();
 	let nextEventId = 0;
 	let eventLog = $state<Array<{ id: number; time: string; transcript: Transcript }>>([]);
 
-	function toggle() {
-		// Lazily create source on first use (browser-only)
+	function ensureSource() {
 		if (!source) {
 			source = new WebSpeechSource();
 			source.onResult = handleResult;
+			source.onError = handleSourceError;
 		}
+		return source;
+	}
 
-		if (source.listening) {
-			source.stopListening();
-		} else {
-			const result = source.startListening();
+	function handleSourceError(error: string, message: string) {
+		// Fatal error from source — disable auto-listen so focusin
+		// doesn't keep retrying a broken recognition instance.
+		autoListenEnabled = false;
+		console.error(`[Voice Input] Fatal error: ${error} — ${message}`);
+	}
+
+	function startListening() {
+		const s = ensureSource();
+		if (!s.listening) {
+			const result = s.startListening();
 			if (isErr(result)) {
 				console.error(result.error.message);
 			}
 		}
+	}
+
+	function stopListening() {
+		source?.stopListening();
+	}
+
+	function toggleVoiceInput() {
+		if (autoListenEnabled) {
+			// Disable voice input mode
+			autoListenEnabled = false;
+			stopListening();
+		} else {
+			// Enable voice input mode — button click satisfies user gesture requirement
+			const s = ensureSource();
+			if (!s.listening) {
+				const result = s.startListening();
+				if (isErr(result)) {
+					console.error(result.error.message);
+					return; // Don't enable auto-listen if start failed
+				}
+			}
+			autoListenEnabled = true;
+		}
+	}
+
+	// --- Auto-listen on focus/blur ---
+	// Uses focusin/focusout on a container wrapping textarea + controls.
+	// focusout's relatedTarget tells us WHERE focus is going — if it's
+	// still inside the container, we don't stop.
+
+	function handleFocusIn() {
+		if (autoListenEnabled) {
+			startListening();
+		}
+	}
+
+	function handleFocusOut(e: FocusEvent) {
+		if (!autoListenEnabled) return;
+		const goingTo = e.relatedTarget as Node | null;
+		if (goingTo && containerEl?.contains(goingTo)) return;
+		stopListening();
 	}
 
 	let copied = $state(false);
@@ -38,7 +90,6 @@
 	}
 
 	function handleResult(transcript: Transcript) {
-		// Log event (keep last 50)
 		const time = new Date().toLocaleTimeString('en-US', {
 			hour12: false,
 			hour: '2-digit',
@@ -46,8 +97,6 @@
 			second: '2-digit'
 		});
 		eventLog = [{ id: nextEventId++, time, transcript }, ...eventLog].slice(0, 50);
-
-		// Feed to component
 		transcribeArea?.handleTranscript(transcript);
 	}
 </script>
@@ -61,19 +110,27 @@
 		> for details.
 	</p>
 
-	<TranscribeArea bind:this={transcribeArea} bind:value />
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="input-group"
+		bind:this={containerEl}
+		onfocusin={handleFocusIn}
+		onfocusout={handleFocusOut}
+	>
+		<TranscribeArea bind:this={transcribeArea} bind:value />
 
-	<div class="controls">
-		<button onclick={toggle}>
-			{source?.listening ? 'Stop Listening' : 'Start Listening'}
-		</button>
-		<button onclick={copyToClipboard} disabled={!value}>
-			{copied ? 'Copied!' : 'Copy'}
-		</button>
-		<span class="status">
-			<span class="dot" class:active={source?.listening}></span>
-			{source?.listening ? 'Listening — Web Speech API' : 'Idle'}
-		</span>
+		<div class="controls">
+			<button onclick={toggleVoiceInput}>
+				{autoListenEnabled ? 'Disable Voice Input' : 'Enable Voice Input'}
+			</button>
+			<button onclick={copyToClipboard} disabled={!value}>
+				{copied ? 'Copied!' : 'Copy'}
+			</button>
+			<span class="status">
+				<span class="dot" class:active={source?.listening}></span>
+				{source?.listening ? 'Listening — Web Speech API' : 'Idle'}
+			</span>
+		</div>
 	</div>
 
 	<details class="debug" open>

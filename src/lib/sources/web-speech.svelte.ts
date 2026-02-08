@@ -81,6 +81,7 @@ export class WebSpeechSource implements TranscriptionSource {
 	readonly name = 'web-speech';
 
 	onResult: ((result: Transcript) => void) | null = null;
+	onError: ((error: string, message: string) => void) | null = null;
 
 	/** Reactive — true while recognition is active. */
 	listening = $state(false);
@@ -181,6 +182,7 @@ export class WebSpeechSource implements TranscriptionSource {
 			// Fatal errors — stop the restart loop
 			this.shouldBeListening = false;
 			this.listening = false;
+			this.onError?.(event.error, event.message);
 		};
 
 		recognition.onend = () => {

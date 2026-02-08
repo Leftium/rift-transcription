@@ -11,11 +11,11 @@ This project is a testing ground to prototype UX ideas for [Whispering](https://
 
 ### Key concepts being prototyped
 
-- **Realtime streaming transcription** — Words appear as you speak, with interim/partial results and multiple backend support. Distinct from Whispering's current batch model (record → stop → transcribe). See [streaming-transcription-demos](https://github.com/Leftium/rift-transcription/blob/main/reference/streaming-transcription-demos.md) and [Streaming Transcription Provider Comparison](https://github.com/Leftium/rift-transcription/blob/main/reference/whispering-io-analysis.md#streaming-transcription-provider-comparison) for research.
+- **Realtime streaming transcription** — Words appear as you speak, with interim/partial results and multiple source support. Distinct from Whispering's current batch model (record → stop → transcribe). See [streaming-transcription-demos](https://github.com/Leftium/rift-transcription/blob/main/reference/streaming-transcription-demos.md) and [Streaming Transcription Provider Comparison](https://github.com/Leftium/rift-transcription/blob/main/reference/whispering-io-analysis.md#streaming-transcription-provider-comparison) for research.
 
 - **Script-based transformation (pre/post processing)** — A sandboxed `script` transformation type that runs user-authored JavaScript (with TypeScript support) to process text locally — no API keys, no cost, no latency. Covers use cases like personal dictionaries, punctuation commands, filler word removal, and multi-step pipelines that Whispering's existing `find_replace` and `prompt_transform` types can't handle alone. See [whispering-script-transformation.md](https://github.com/Leftium/epicenter/blob/feat/script-transformation/specs/whispering-script-transformation.md) for the full spec.
 
-- **Actor model (isolated/swappable extensions)** — Each subsystem (recorder, transcriber, transformer, clipboard) runs as an isolated actor with private state, communicating only via message passing. Enables hot-swapping backends, fault isolation, and multi-core parallelism. See [Actor Model for Multi-Core Parallelism](https://github.com/Leftium/rift-transcription/blob/main/reference/epicenter-plugin-architecture-feasibility.md#actor-model-for-multi-core-parallelism) for the full architecture.
+- **Actor model (isolated/swappable extensions)** — Each subsystem (recorder, transcriber, transformer, clipboard) runs as an isolated actor with private state, communicating only via message passing. Enables hot-swapping sources, fault isolation, and multi-core parallelism. See [Actor Model for Multi-Core Parallelism](https://github.com/Leftium/rift-transcription/blob/main/reference/epicenter-plugin-architecture-feasibility.md#actor-model-for-multi-core-parallelism) for the full architecture.
 
 - **Wide events (context)** — Rich, structured events that capture full app-level context (settings, environment, operation history) with every significant action — not just on errors. Enables one-click debug log export and "nothing happened" bug reproduction. See the [Wide Context Spec](https://github.com/Leftium/wellcrafted/blob/spec/context/specs/wide-context/README.md) and [sample event](https://github.com/Leftium/wellcrafted/blob/spec/context/specs/wide-context/sample-wide-context.json) for details.
 
@@ -381,11 +381,11 @@ RIFT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
 ---
 
-## Transcription Backends
+## Transcription Sources
 
-Five backends with different tradeoffs:
+Five sources with different tradeoffs:
 
-| Backend               | Purpose                               | Latency             | Accuracy        | Setup         | Price       |
+| Source                | Purpose                               | Latency             | Accuracy        | Setup         | Price       |
 | --------------------- | ------------------------------------- | ------------------- | --------------- | ------------- | ----------- |
 | **Web Speech API**    | Zero-config demo, broad compatibility | Medium (~300-500ms) | Good            | None          | Free        |
 | **Sherpa**            | Research, optimal latency, offline    | Low (~100-200ms)    | Good (~4-6%)    | Local install | Free        |
@@ -398,7 +398,7 @@ Five backends with different tradeoffs:
 Browser-native speech recognition. Zero dependencies, works immediately.
 
 ```typescript
-type WebSpeechBackend = {
+type WebSpeechSource = {
 	type: 'web-speech';
 	// No config needed - uses browser's built-in recognition
 };
@@ -431,7 +431,7 @@ recognition.onresult = (event) => {
 Local ASR via WebAssembly or native. Full control, no network dependency.
 
 ```typescript
-type SherpaBackend = {
+type SherpaSource = {
 	type: 'sherpa';
 	modelPath: string;
 	// Supports word-level timestamps, confidence scores, force endpoint
@@ -453,7 +453,7 @@ type SherpaBackend = {
 Cloud API purpose-built for low-latency voice interactions. Best fit for RIFT's architecture.
 
 ```typescript
-type SonioxBackend = {
+type SonioxSource = {
 	type: 'soniox';
 	apiKey: string;
 	model: 'stt-rt-v4';
@@ -491,7 +491,7 @@ type SonioxBackend = {
 Cloud API with best price/performance ratio. Native streaming architecture (not chunked batch).
 
 ```typescript
-type VoxtralBackend = {
+type VoxtralSource = {
 	type: 'voxtral';
 	apiKey: string;
 	mode: 'streaming' | 'batch';
@@ -524,7 +524,7 @@ type VoxtralBackend = {
 Cloud API with broadest language support. Two modes:
 
 ```typescript
-type ScribeBackend = {
+type ScribeSource = {
 	type: 'scribe';
 	apiKey: string;
 	mode: 'streaming' | 'batch';
@@ -546,7 +546,7 @@ type ScribeBackend = {
 
 ### Unified Interface
 
-All backends implement the same interface:
+All sources implement the same interface:
 
 ```typescript
 import { Result, Ok, Err } from 'wellcrafted/result';
@@ -555,16 +555,17 @@ import { createTaggedError } from 'wellcrafted/error';
 // Errors
 const { TranscriptionError, TranscriptionErr } = createTaggedError(
 	'TranscriptionError'
-).withContext<{ backend: string }>();
+).withContext<{ source: string }>();
 type TranscriptionError = ReturnType<typeof TranscriptionError>;
 
-// Backend interface
-interface TranscriptionBackend {
+// Source interface (aligned with transcription-rs naming: "Source" = push-based, "Engine" = pull-based)
+// See: https://github.com/Leftium/transcribe-rs/blob/docs/streaming-api-spec/specs/transcription-rs.md
+interface TranscriptionSource {
 	readonly name: string; // 'web-speech' | 'sherpa' | 'soniox' | 'voxtral' | 'scribe'
 
-	start(): Result<void, TranscriptionError>;
-	stop(): Result<void, TranscriptionError>;
-	finalize(): void; // Force endpoint (Web Speech: stop + restart)
+	startListening(): Result<void, TranscriptionError>;
+	stopListening(): Result<void, TranscriptionError>;
+	finalize(): void; // Force endpoint without stopping (RIFT addition — not in transcription-rs)
 
 	onResult: (result: Transcript) => void;
 }
@@ -636,7 +637,7 @@ type Word = {
 - **`raw`** — full backend response for debugging or accessing niche fields not in this type. Disabled by default for performance; enable via backend config.
 - **Batch results** always have `isFinal: true` and `isEndpoint: true`.
 
-**Backend capability matrix:**
+**Source capability matrix:**
 
 | Field          | Web Speech           | Sherpa | Soniox v4      | Voxtral | Scribe  |
 | -------------- | -------------------- | ------ | -------------- | ------- | ------- |
@@ -660,52 +661,52 @@ type Word = {
 - Soniox streams individual tokens with `is_final` flags (not full-transcript replacements)
 - Voxtral provides segment-level timestamps; word-level granularity TBD
 - `speaker` row shows diarization availability (same data that was previously in a separate "Diarization" row)
-- `alternatives` not yet available from any streaming backend we support; future addition
+- `alternatives` not yet available from any streaming source we support; future addition
 - Uses WellCrafted Result type for explicit error handling
 
-### Backend Selection Logic
+### Source Selection Logic
 
-Auto-detect best available backend, fall back to Web Speech API:
+Auto-detect best available source, fall back to Web Speech API:
 
 ```typescript
-const { BackendError, BackendErr } = createTaggedError('BackendError');
-type BackendError = ReturnType<typeof BackendError>;
+const { SourceError, SourceErr } = createTaggedError('SourceError');
+type SourceError = ReturnType<typeof SourceError>;
 
-function detectBackend(): Result<TranscriptionBackend, BackendError> {
+function detectSource(): Result<TranscriptionSource, SourceError> {
 	// Prefer Sherpa if available (e.g., WASM loaded, native module present)
 	if (isSherpaAvailable()) {
-		return Ok(createSherpaBackend(config));
+		return Ok(createSherpaSource(config));
 	}
 
 	// Prefer Soniox if API key configured (best RIFT fit: finalize + semantic endpointing)
 	if (config.sonioxApiKey) {
-		return Ok(createSonioxBackend(config));
+		return Ok(createSonioxSource(config));
 	}
 
 	// Prefer Voxtral if API key configured (best price/performance)
 	if (config.voxtralApiKey) {
-		return Ok(createVoxtralBackend(config));
+		return Ok(createVoxtralSource(config));
 	}
 
 	// Prefer Scribe if API key configured (most languages)
 	if (config.scribeApiKey) {
-		return Ok(createScribeBackend(config));
+		return Ok(createScribeSource(config));
 	}
 
 	// Fall back to Web Speech API (zero-config, works in most browsers)
 	if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-		return Ok(createWebSpeechBackend());
+		return Ok(createWebSpeechSource());
 	}
 
-	return BackendErr({ message: 'No transcription backend available' });
+	return SourceErr({ message: 'No transcription source available' });
 }
 
 // Allow explicit override
-function selectBackend(config: Config): Result<TranscriptionBackend, BackendError> {
-	if (config.preferredBackend) {
-		return Ok(createBackend(config.preferredBackend));
+function selectSource(config: Config): Result<TranscriptionSource, SourceError> {
+	if (config.preferredSource) {
+		return Ok(createSource(config.preferredSource));
 	}
-	return detectBackend();
+	return detectSource();
 }
 ```
 
@@ -717,29 +718,29 @@ function selectBackend(config: Config): Result<TranscriptionBackend, BackendErro
 4. Scribe (if API key configured) — most languages, code-switching
 5. Web Speech API — zero-config fallback
 
-### Hot-Swapping Backends
+### Hot-Swapping Sources
 
-Switch backends on the fly without losing state:
+Switch sources on the fly without losing state:
 
 ```typescript
 class TranscriptionManager {
-	private backend: TranscriptionBackend;
+	private source: TranscriptionSource;
 	private audioBuffer: Float32Array[] = []; // keep recent audio for re-transcription
 
-	switchBackend(
-		newBackend: TranscriptionBackend,
+	switchSource(
+		newSource: TranscriptionSource,
 	): Result<void, TranscriptionError> {
 		// Finalize current utterance
-		this.backend.finalize();
+		this.source.finalize();
 
 		// Swap
-		const { error } = this.backend.stop();
+		const { error } = this.source.stopListening();
 		if (error) return error;
 
-		this.backend = newBackend;
-		this.backend.onResult = this.handleResult.bind(this);
+		this.source = newSource;
+		this.source.onResult = this.handleResult.bind(this);
 
-		return this.backend.start();
+		return this.source.startListening();
 	}
 
   // Re-transcribe selection with batch API for higher accuracy
@@ -755,7 +756,7 @@ class TranscriptionManager {
     // - Full context (sees entire utterance)
     // - More post-processing (punctuation, formatting)
     return transcribeBatch(stitchedAudio, {
-      backend: 'scribe',
+      source: 'scribe',
       model: 'scribe_v2',
     });
   }
@@ -826,8 +827,8 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 **Requirements:**
 
 - Keep audio buffer for recent segments (for batch re-transcription)
-- Utterance tracker handles backend changes transparently
-- UI shows which backend produced each segment (optional)
+- Utterance tracker handles source changes transparently
+- UI shows which source produced each segment (optional)
 - Replace text in ProseMirror when batch result arrives
 
 ---
@@ -845,7 +846,7 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 
 A `TranscribeArea` is a textarea that also accepts input events triggered by voice. From the component's perspective, voice is just another input source — like an IME or autocomplete. The component doesn't own the mic or recording logic; it receives `Transcript` events and handles display/composition.
 
-**The component is a display/composition layer, not a transcription engine.** It accepts the `Transcript` type already defined in this spec — text with an `isFinal` flag — and manages the interim→final lifecycle. Audio capture, recording control, and backend selection all live outside the component.
+**The component is a display/composition layer, not a transcription engine.** It accepts the `Transcript` type already defined in this spec — text with an `isFinal` flag — and manages the interim→final lifecycle. Audio capture, recording control, and source selection all live outside the component.
 
 ```
 mic → recorder → audio → transcriber → Transcript → TranscribeArea
@@ -913,7 +914,7 @@ Voice input maps 1:1 to [IME composition](https://developer.mozilla.org/en-US/do
 | ------------------- | ------------------------------ | ---------------------------------------- |
 | `compositionstart`  | User begins typing in IME mode | Speech starts (first interim arrives)    |
 | `compositionupdate` | Candidate string changes       | New interim result (partial recognition) |
-| `compositionend`    | User confirms candidate        | `isFinal: true` from backend             |
+| `compositionend`    | User confirms candidate        | `isFinal: true` from source              |
 
 Browsers have [`compositionstart`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionstart_event), [`compositionupdate`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionupdate_event), [`compositionend`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionend_event) events for exactly this lifecycle:
 
@@ -951,8 +952,8 @@ The only structural difference is **async timing**: IME updates arrive in respon
 The component receives `Transcript` events — the same way a textarea receives `input` and `composition` events. Voice results are input events pushed _into_ the component, not props observed by it.
 
 ```typescript
-// Consumer wires the transcription backend to the component
-backend.onResult = (transcript) => {
+// Consumer wires the transcription source to the component
+source.onResult = (transcript) => {
 	// Dispatches composition events on the component internally
 	transcribeArea.handleTranscript(transcript);
 };
@@ -973,7 +974,7 @@ The component manages the composition lifecycle internally:
 - Selection/cursor — insertion point for new speech
 - Copy/paste still works
 
-**What the consumer owns:** mic access, recording start/stop, backend selection, pushing `Transcript` events into the component
+**What the consumer owns:** mic access, recording start/stop, source selection, pushing `Transcript` events into the component
 
 **What the component owns:** composition lifecycle (interim→final), visual distinction of uncommitted text, cursor/insertion behavior
 
@@ -1068,7 +1069,7 @@ TranscribeArea and the full RIFT Editor are **separate components for different 
 Consumer code that pushes `Transcript` events is identical for both:
 
 ```typescript
-backend.onResult = (transcript) => {
+source.onResult = (transcript) => {
 	// Same call regardless of which component is on the page
 	component.handleTranscript(transcript);
 };
@@ -1418,9 +1419,9 @@ They support multiple speakers per document via `paragraph_start.speaker`. The U
 
 ## Implementation Order
 
-Start with **Web Speech API**, then add production backends:
+Start with **Web Speech API**, then add production sources:
 
-| Phase | Backend    | Why                                                      |
+| Phase | Source     | Why                                                      |
 | ----- | ---------- | -------------------------------------------------------- |
 | 1     | Web Speech | Zero setup, fast iteration, proves architecture          |
 | 2     | Sherpa     | Adds word timestamps, real `finalize`, offline support   |
@@ -1433,7 +1434,7 @@ Start with **Web Speech API**, then add production backends:
 - **5 lines to first result** — no WASM loading, no model downloads
 - **No server required** — Sherpa/Soniox/Voxtral/Scribe WebSocket APIs work but need audio capture setup
 - **Handles its own audio** — Web Speech connects directly to mic; other APIs need audio capture (`getUserMedia` → `AudioWorklet` → WebSocket). Doesn't affect our unified `Transcript` interface, but adds implementation work.
-- **Architecture is backend-agnostic** — Sherpa adds optional fields (`words[]`, `confidence`), doesn't change shape
+- **Architecture is source-agnostic** — Sherpa adds optional fields (`words[]`, `confidence`), doesn't change shape
 - **Becomes the fallback anyway** — work isn't thrown away
 
 **Why Soniox for Phase 3a:**
@@ -1457,8 +1458,8 @@ Start with **Web Speech API**, then add production backends:
 
 **Risk is low** because:
 
-- All backends implement the same `Transcript` type shape
-- The hard part (cursor interrupt, draining, timestamp filtering) is backend-agnostic
+- All sources implement the same `Transcript` type shape
+- The hard part (cursor interrupt, draining, timestamp filtering) is source-agnostic
 - `finalize` behavioral difference (Web Speech fakes via stop+restart) doesn't affect utterance tracker logic
 
 ## Open Questions / Next Steps

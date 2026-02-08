@@ -5,11 +5,28 @@
 	import EventLog from '$lib/EventLog.svelte';
 	import { VoiceInputController } from '$lib/VoiceInputController.svelte';
 
+	import { onMount } from 'svelte';
+
 	const voice = new VoiceInputController();
 
 	let value0 = $state('');
 	let value1 = $state('');
 	let value2 = $state('');
+
+	// Persist Deepgram API key in localStorage
+	const DG_KEY = 'deepgram-api-key';
+	onMount(() => {
+		voice.deepgramApiKey = localStorage.getItem(DG_KEY) ?? '';
+	});
+
+	function setDeepgramKey(key: string) {
+		voice.deepgramApiKey = key;
+		if (key) {
+			localStorage.setItem(DG_KEY, key);
+		} else {
+			localStorage.removeItem(DG_KEY);
+		}
+	}
 </script>
 
 <main>
@@ -31,6 +48,7 @@
 			<select value={voice.sourceType} onchange={(e) => voice.setSource(e.currentTarget.value)}>
 				<option value="web-speech">Web Speech API</option>
 				<option value="sherpa">Sherpa (local)</option>
+				<option value="deepgram">Deepgram (cloud)</option>
 			</select>
 
 			{#if voice.sourceType === 'sherpa'}
@@ -42,12 +60,25 @@
 					size="24"
 				/>
 				<a href="/sherpa" class="setup-link">Setup</a>
+			{:else if voice.sourceType === 'deepgram'}
+				<input
+					type="password"
+					class="api-key"
+					value={voice.deepgramApiKey}
+					oninput={(e) => setDeepgramKey(e.currentTarget.value)}
+					placeholder="Deepgram API key"
+					size="28"
+				/>
 			{/if}
 
 			<span class="status">
 				<span class="dot" class:active={voice.listening}></span>
 				{#if voice.listening}
-					Listening — {voice.sourceType === 'sherpa' ? 'Sherpa' : 'Web Speech'}
+					Listening — {voice.sourceType === 'sherpa'
+						? 'Sherpa'
+						: voice.sourceType === 'deepgram'
+							? 'Deepgram'
+							: 'Web Speech'}
 				{:else}
 					Idle
 				{/if}
@@ -184,7 +215,8 @@
 		font-size: 13px;
 	}
 
-	.server-url {
+	.server-url,
+	.api-key {
 		padding: 6px 8px;
 		border: 1px solid #ccc;
 		border-radius: 4px;

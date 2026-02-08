@@ -14,8 +14,9 @@ import { isErr } from 'wellcrafted/result';
 import type { TranscriptionSource } from '$lib/types.js';
 import { WebSpeechSource } from '$lib/sources/web-speech.svelte';
 import { SherpaSource } from '$lib/sources/sherpa.svelte';
+import { DeepgramSource } from '$lib/sources/deepgram.svelte';
 
-export type SourceType = 'web-speech' | 'sherpa';
+export type SourceType = 'web-speech' | 'sherpa' | 'deepgram';
 
 export class VoiceInputController {
 	#source: TranscriptionSource | null = $state(null);
@@ -24,16 +25,17 @@ export class VoiceInputController {
 	enabled = $state(false);
 	sourceType = $state<SourceType>('sherpa');
 	sherpaUrl = $state('ws://localhost:6006');
+	deepgramApiKey = $state('');
 
 	get listening(): boolean {
 		return this.#source?.listening ?? false;
 	}
 
-	/** Reactive — true while WebSocket is connected (sherpa only). */
+	/** Reactive — true while WebSocket is connected (sherpa/deepgram). */
 	get connected(): boolean {
 		const s = this.#source;
 		if (s && 'connected' in s) {
-			return (s as SherpaSource).connected;
+			return (s as SherpaSource | DeepgramSource).connected;
 		}
 		return false;
 	}
@@ -42,7 +44,9 @@ export class VoiceInputController {
 
 	#ensureSource(): TranscriptionSource {
 		if (!this.#source) {
-			if (this.sourceType === 'sherpa') {
+			if (this.sourceType === 'deepgram') {
+				this.#source = new DeepgramSource(this.deepgramApiKey);
+			} else if (this.sourceType === 'sherpa') {
 				this.#source = new SherpaSource(this.sherpaUrl);
 			} else {
 				this.#source = new WebSpeechSource();

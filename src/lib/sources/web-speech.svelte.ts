@@ -86,6 +86,22 @@ export class WebSpeechSource implements TranscriptionSource {
 
 	private recognition: SpeechRecognitionInstance | null = null;
 	private shouldBeListening = false;
+
+	// Track which result indices have already been finalized.
+	// Android Chrome re-delivers the entire results array on every onresult
+	// (resultIndex=0 every time), so without this guard old finals get
+	// re-emitted with new segmentIds, causing cumulative text duplication.
+	private finalizedResultIndices = new Set<number>();
+
+	// Track cumulative final text to extract deltas.
+	// Android Chrome sends all-final cumulative results where each result's
+	// text contains ALL previously recognized words plus new ones.
+	// We compare against the last committed text to emit only the new portion.
+	private lastCommittedText = '';
+
+	// Monotonic segment counter for emitted transcripts. Incremented after
+	// each real final so subsequent interims get a higher ID (avoiding
+	// TranscribeArea's committedThroughSegment rejection).
 	private nextSegmentId = 0;
 
 	// Restart backoff — prevents tight restart loops when Chrome kills
@@ -134,10 +150,10 @@ export class WebSpeechSource implements TranscriptionSource {
 	finalize() {
 		// Web Speech has no native finalize — fake it via stop + restart.
 		// The onend handler will restart if shouldBeListening is still true.
+		// The new recognition session gets a fresh results array, so
+		// finalizedResultIndices is cleared in startRecognition.
 		if (this.recognition && this.shouldBeListening) {
 			this.recognition.stop();
-			// Bump segmentId so the next utterance gets a new ID
-			this.nextSegmentId++;
 		}
 	}
 
@@ -162,6 +178,11 @@ export class WebSpeechSource implements TranscriptionSource {
 			this.recognition = null;
 		}
 
+		// New session — fresh results array, so reset tracking state
+		this.finalizedResultIndices.clear();
+		this.lastCommittedText = '';
+		this.nextSegmentId = 0;
+
 		const recognition = new Ctor();
 		recognition.continuous = true;
 		recognition.interimResults = true;
@@ -180,37 +201,67 @@ export class WebSpeechSource implements TranscriptionSource {
 
 			if (!this.onResult) return;
 
-			// Snapshot nextSegmentId for stable IDs within this batch.
-			// Bumping mid-loop would rebase later segments, giving them
-			// new IDs that bypass TranscribeArea's orphan-rejection logic.
-			const baseSegmentId = this.nextSegmentId;
-			let maxFinalSegmentId = -1;
-
 			for (let i = event.resultIndex; i < event.results.length; i++) {
+				// Skip indices we've already finalized — Android re-delivers
+				// the entire results array on every onresult (resultIndex=0).
+				if (this.finalizedResultIndices.has(i)) continue;
+
 				const result = event.results[i];
 				const alt = result[0];
 
-				const segmentId = baseSegmentId + i;
+				// Android Chrome quirk: interim results are marked isFinal
+				// with confidence 0. Real finals have confidence > 0.
+				// Treat confidence-0 "finals" as interims so consumers get
+				// proper interim previews on Android.
+				// See: https://stackoverflow.com/a/43458449
+				const isRealFinal = result.isFinal && alt.confidence > 0;
+				const isFakeInterim = result.isFinal && alt.confidence === 0;
+				const isFinal = isRealFinal;
+
+				let text = alt.transcript;
+
+				if (isFakeInterim) {
+					// Android fake interims have cumulative text (each contains
+					// the full utterance so far). Emit with nextSegmentId so
+					// TranscribeArea's interims.set() replaces rather than
+					// accumulates. Same segmentId for all fake interims within
+					// one utterance — only bumped after a real final.
+					const transcript: Transcript = {
+						text,
+						isFinal: false,
+						isEndpoint: false,
+						segmentId: this.nextSegmentId,
+						confidence: undefined
+					};
+					this.onResult(transcript);
+					continue;
+				}
+
+				if (isFinal) {
+					// Real final — extract delta from cumulative text.
+					// Android sends "hello", "hello world" etc. where each
+					// final contains all previous words plus new ones.
+					if (this.lastCommittedText && text.startsWith(this.lastCommittedText)) {
+						text = text.slice(this.lastCommittedText.length);
+					}
+					this.finalizedResultIndices.add(i);
+					this.lastCommittedText = alt.transcript;
+				}
+
+				const segmentId = this.nextSegmentId;
+				if (isFinal) {
+					this.nextSegmentId++;
+				}
 
 				const transcript: Transcript = {
-					text: alt.transcript,
-					isFinal: result.isFinal,
-					isEndpoint: result.isFinal, // Web Speech: final ≈ endpoint
+					text,
+					isFinal,
+					isEndpoint: isFinal,
 					segmentId,
 					confidence: alt.confidence > 0 ? alt.confidence : undefined
 				};
 
 				this.onResult(transcript);
-
-				if (result.isFinal && segmentId > maxFinalSegmentId) {
-					maxFinalSegmentId = segmentId;
-				}
-			}
-
-			// Bump segment counter after the loop so all results in
-			// the same batch get stable, consistent IDs.
-			if (maxFinalSegmentId >= 0) {
-				this.nextSegmentId = maxFinalSegmentId + 1;
 			}
 		};
 

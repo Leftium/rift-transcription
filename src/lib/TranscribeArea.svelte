@@ -7,17 +7,42 @@
 	interface Props extends HTMLTextareaAttributes {
 		value?: string;
 		placeholder?: string;
+		debug?: boolean;
 	}
 
 	let {
 		value = $bindable(''),
 		placeholder = 'Type or speak...',
+		debug = false,
 		oninput,
 		...restProps
 	}: Props = $props();
 
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
 	let containerEl: HTMLElement | undefined = $state();
+
+	type DebugEntry = { id: number; time: string; source: string; data: Record<string, unknown> };
+	let debugLog: DebugEntry[] = $state([]);
+	let nextDebugId = 0;
+
+	function debugPush(source: string, data: Record<string, unknown>) {
+		if (!debug) return;
+		debugLog = [
+			{
+				id: nextDebugId++,
+				time: new Date().toLocaleTimeString('en-US', {
+					hour12: false,
+					hour: '2-digit',
+					minute: '2-digit',
+					second: '2-digit',
+					fractionalSecondDigits: 3
+				}),
+				source,
+				data
+			},
+			...debugLog
+		].slice(0, 100);
+	}
 
 	// Track interims per segmentId — Web Speech fires interleaved results for
 	// multiple segments simultaneously (e.g., seg=2 and seg=3 alternating).
@@ -45,13 +70,13 @@
 	// After a final for segmentId N, ignore late-arriving interims for
 	// segments <= N. Web Speech API fires interleaved multi-segment results
 	// and seg=1 interims can arrive after seg=0's final clears the map.
-	let committedThroughSegment = -1;
+	let committedThroughSegment = $state(-1);
 
 	// When the user types during active interims, the interim text gets baked
 	// into value. While true, ALL interims and finals are suppressed — the
 	// entire pending utterance is stale. Cleared when a final arrives (which
 	// means the engine has finished processing the baked audio).
-	let interimsBaked = false;
+	let interimsBaked = $state(false);
 
 	let rawInterimText: string = $derived(Array.from(interims.values()).join('').trim());
 
@@ -106,6 +131,16 @@
 	// --- Transcript handling (internal) ---
 
 	function handleTranscript(transcript: Transcript): void {
+		debugPush('transcript', {
+			isFinal: transcript.isFinal,
+			seg: transcript.segmentId,
+			text: transcript.text,
+			valueLen: value.length,
+			interims: interims.size,
+			insStart: insertionStart,
+			insEnd: insertionEnd
+		});
+
 		if (transcript.isFinal) {
 			// Reject finals for speech that was already baked into value
 			// by keyboard input during interims — prevents duplicate text.
@@ -201,6 +236,15 @@
 
 		const rawValue = e.currentTarget.value;
 
+		debugPush('input', {
+			rawLen: rawValue.length,
+			valueLen: value.length,
+			interims: interims.size,
+			snippet: rawValue.slice(-40),
+			isTrusted: e.isTrusted,
+			inputType: (e as unknown as InputEvent).inputType
+		});
+
 		// User typed while interims were active — interims are implicitly
 		// committed (the textarea DOM already contains them baked into the
 		// value). This is acceptable because the interim was a reasonable
@@ -242,6 +286,41 @@
 		oninput={handleInput}
 	></textarea>
 </div>
+
+{#if debug}
+	<details open class="ta-debug">
+		<summary>TranscribeArea Debug</summary>
+		<div class="ta-debug-state">
+			<span><b>value:</b> {value.length}ch</span>
+			<span><b>display:</b> {displayValue.length}ch</span>
+			<span><b>interims:</b> {interims.size}</span>
+			<span><b>ins:</b> {insertionStart ?? '-'}..{insertionEnd ?? '-'}</span>
+			<span><b>baked:</b> {interimsBaked}</span>
+			<span><b>committed≤:</b> {committedThroughSegment}</span>
+		</div>
+		{#if interims.size > 0}
+			<div class="ta-debug-interims">
+				<b>Interim map:</b>
+				{#each [...interims.entries()] as [seg, text] (seg)}
+					<span class="ta-debug-interim">seg={seg}: "{text}"</span>
+				{/each}
+			</div>
+		{/if}
+		<div class="ta-debug-log">
+			{#each debugLog as entry (entry.id)}
+				<div
+					class="ta-debug-entry"
+					class:is-input={entry.source === 'input'}
+					class:is-transcript={entry.source === 'transcript'}
+				>
+					<span class="ta-debug-time">{entry.time}</span>
+					<span class="ta-debug-src">{entry.source}</span>
+					<span class="ta-debug-data">{JSON.stringify(entry.data)}</span>
+				</div>
+			{/each}
+		</div>
+	</details>
+{/if}
 
 <style>
 	.transcribe-area {
@@ -317,5 +396,66 @@
 
 	.input:disabled {
 		cursor: not-allowed;
+	}
+
+	.ta-debug {
+		margin-top: 8px;
+		font-size: 11px;
+		font-family: 'Courier New', Courier, monospace;
+		border: 1px solid #ddd;
+		border-radius: 4px;
+		padding: 4px 8px;
+	}
+	.ta-debug summary {
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 12px;
+	}
+	.ta-debug-state {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 4px 0;
+		border-bottom: 1px solid #eee;
+	}
+	.ta-debug-interims {
+		padding: 4px 0;
+		border-bottom: 1px solid #eee;
+	}
+	.ta-debug-interim {
+		display: block;
+		padding-left: 8px;
+		color: #888;
+	}
+	.ta-debug-log {
+		max-height: 200px;
+		overflow-y: auto;
+	}
+	.ta-debug-entry {
+		display: flex;
+		gap: 6px;
+		padding: 1px 0;
+		border-bottom: 1px solid #f5f5f5;
+		white-space: nowrap;
+	}
+	.ta-debug-entry.is-input {
+		background: #fff8e1;
+	}
+	.ta-debug-entry.is-transcript {
+		background: #f3e5f5;
+	}
+	.ta-debug-time {
+		color: #999;
+		flex-shrink: 0;
+	}
+	.ta-debug-src {
+		width: 72px;
+		flex-shrink: 0;
+		font-weight: 600;
+	}
+	.ta-debug-data {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		color: #555;
 	}
 </style>

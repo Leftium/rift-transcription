@@ -36,7 +36,7 @@
 		<section class="level">
 			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
 			<p class="level-desc">Full experience. Interim text shown inline with dotted underline.</p>
-			<TranscribeArea bind:value={value2} placeholder="Type or speak (with interims)..." />
+			<TranscribeArea bind:value={value2} placeholder="Type or speak (with interims)..." debug />
 			<CopyButton value={value2} />
 		</section>
 

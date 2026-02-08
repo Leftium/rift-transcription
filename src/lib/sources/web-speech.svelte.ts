@@ -88,6 +88,12 @@ export class WebSpeechSource implements TranscriptionSource {
 	private shouldBeListening = false;
 	private nextSegmentId = 0;
 
+	// Restart backoff — prevents tight restart loops when Chrome kills
+	// recognition repeatedly (e.g., no microphone, permission denied).
+	private restartAttempts = 0;
+	private static readonly MAX_RESTART_ATTEMPTS = 5;
+	private static readonly RESTART_DELAY_MS = 300; // base delay, doubles each attempt
+
 	constructor(private lang: string = 'en-US') {}
 
 	startListening() {
@@ -104,6 +110,7 @@ export class WebSpeechSource implements TranscriptionSource {
 		}
 
 		this.shouldBeListening = true;
+		this.restartAttempts = 0; // explicit start — reset backoff
 		this.startRecognition(Ctor);
 		return Ok(undefined);
 	}
@@ -142,6 +149,7 @@ export class WebSpeechSource implements TranscriptionSource {
 
 		recognition.onstart = () => {
 			this.listening = true;
+			this.restartAttempts = 0; // successful start — reset backoff
 		};
 
 		recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -198,9 +206,24 @@ export class WebSpeechSource implements TranscriptionSource {
 
 			// Chrome kills recognition periodically — restart if we should still be listening
 			if (this.shouldBeListening) {
+				if (this.restartAttempts >= WebSpeechSource.MAX_RESTART_ATTEMPTS) {
+					console.error(
+						`[WebSpeechSource] giving up after ${this.restartAttempts} restart attempts`
+					);
+					this.shouldBeListening = false;
+					this.onError?.('restart-failed', 'Too many restart attempts');
+					return;
+				}
+
 				const Ctor = getSpeechRecognition();
 				if (Ctor) {
-					this.startRecognition(Ctor);
+					const delay = WebSpeechSource.RESTART_DELAY_MS * Math.pow(2, this.restartAttempts);
+					this.restartAttempts++;
+					setTimeout(() => {
+						if (this.shouldBeListening) {
+							this.startRecognition(Ctor);
+						}
+					}, delay);
 				}
 			}
 		};

@@ -99,9 +99,12 @@ export function needsSpaceBefore(before: string): boolean {
 	return before.length > 0 && !/\s$/.test(before);
 }
 
-/** Add a space after text if the following character isn't whitespace. */
+/** Add a space after text if the following character isn't whitespace or punctuation. */
 export function needsSpaceAfter(after: string): boolean {
-	return after.length > 0 && !/^\s/.test(after);
+	if (after.length === 0) return false;
+	// Don't insert space before whitespace or closing/trailing punctuation
+	if (/^[\s.,!?;:)\]}"']/.test(after)) return false;
+	return true;
 }
 
 // ---------------------------------------------------------------------------

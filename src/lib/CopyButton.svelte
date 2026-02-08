@@ -8,12 +8,17 @@
 	let copied = $state(false);
 
 	function copyToClipboard() {
-		navigator.clipboard.writeText(value).then(() => {
-			copied = true;
-			setTimeout(() => {
-				copied = false;
-			}, 1500);
-		});
+		navigator.clipboard.writeText(value).then(
+			() => {
+				copied = true;
+				setTimeout(() => {
+					copied = false;
+				}, 1500);
+			},
+			(err) => {
+				console.warn('[CopyButton] clipboard write failed:', err);
+			}
+		);
 	}
 </script>
 

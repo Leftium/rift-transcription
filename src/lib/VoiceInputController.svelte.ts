@@ -68,6 +68,11 @@ export class VoiceInputController {
 
 	/** Attachment — auto-pauses/resumes listening on focus/blur of container. */
 	autoListen = (node: HTMLElement) => {
+		// If container already has focus when attachment mounts, start immediately
+		if (this.enabled && node.contains(document.activeElement)) {
+			this.#start();
+		}
+
 		const handleFocusIn = () => {
 			if (this.enabled) {
 				this.#start();

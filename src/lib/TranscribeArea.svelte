@@ -41,6 +41,12 @@
 	// and seg=1 interims can arrive after seg=0's final clears the map.
 	let committedThroughSegment = -1;
 
+	// When the user types during active interims, the interim text gets baked
+	// into value. While true, ALL interims and finals are suppressed — the
+	// entire pending utterance is stale. Cleared when a final arrives (which
+	// means the engine has finished processing the baked audio).
+	let interimsBaked = false;
+
 	let rawInterimText: string = $derived(Array.from(interims.values()).join('').trim());
 
 	// Split committed text around insertion range for preview rendering.
@@ -89,14 +95,20 @@
 	});
 
 	// Restore cursor position after Svelte writes displayValue to textarea.
-	// Reads displayValue to create a reactive dependency so this runs
-	// every time the textarea content actually changes.
+	// Uses requestAnimationFrame to schedule after Svelte's DOM flush,
+	// preventing the controlled value={displayValue} write from displacing
+	// the cursor on the next render cycle (which caused ENTER/punctuation bugs).
 	$effect(() => {
 		displayValue; // reactive dependency
 		untrack(() => {
 			if (cursorAfterUpdate != null && textareaEl) {
-				textareaEl.setSelectionRange(cursorAfterUpdate, cursorAfterUpdate);
+				const pos = cursorAfterUpdate;
+				const el = textareaEl;
 				cursorAfterUpdate = null;
+				// Schedule after Svelte's DOM flush so the value write lands first
+				requestAnimationFrame(() => {
+					el.setSelectionRange(pos, pos);
+				});
 			}
 		});
 	});
@@ -108,6 +120,18 @@
 
 	function handleTranscript(transcript: Transcript): void {
 		if (transcript.isFinal) {
+			// Reject finals for speech that was already baked into value
+			// by keyboard input during interims — prevents duplicate text.
+			// The final signals the engine is done with that utterance,
+			// so clear the flag to allow the next utterance through.
+			if (interimsBaked) {
+				interims.clear();
+				insertionStart = null;
+				insertionEnd = null;
+				interimsBaked = false;
+				return;
+			}
+
 			// Clear ALL interims and reject late-arriving interims for any
 			// segment we've seen. Web Speech fires interleaved multi-segment
 			// results — seg=1 interims can arrive after seg=0's final,
@@ -155,9 +179,9 @@
 				isVoiceCommit = false;
 			}
 		} else {
-			// Reject late-arriving interims for already-committed segments.
-			// Web Speech fires interleaved results — seg=1 interims can
-			// arrive after seg=0's final cleared the map.
+			// Reject interims when baked (user typed during voice) or for
+			// already-committed segments (late-arriving orphans).
+			if (interimsBaked) return;
 			if (transcript.segmentId <= committedThroughSegment) return;
 
 			// Capture selection range on first interim of a voice session
@@ -190,14 +214,22 @@
 
 		const rawValue = e.currentTarget.value;
 
-		// If there was interim text and user typed, interims are implicitly cancelled
+		// User typed while interims were active — interims are implicitly
+		// committed (the textarea DOM already contains them baked into the
+		// value). This is acceptable because the interim was a reasonable
+		// approximation of what the speech engine heard. Mark segments as
+		// baked so their finals get rejected (preventing duplicate text).
 		if (interims.size > 0) {
+			interimsBaked = true;
 			interims.clear();
 			insertionStart = null;
 			insertionEnd = null;
 		}
 
 		value = rawValue;
+
+		// Don't interfere with cursor — let browser handle natively
+		cursorAfterUpdate = null;
 
 		// Forward to consumer's oninput handler
 		oninput?.(e);

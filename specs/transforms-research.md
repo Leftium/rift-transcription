@@ -54,11 +54,68 @@ The pipeline model is the single biggest differentiator — Whispering's #1 pain
 - Handy PR #711 (merged): Implements n-gram matching for multi-word custom word correction. Fixes compound words like "ChatGPT" that STT splits to "Chat G P T", and "ChargeBee" split to "Charge Bee."
 - Whispering #904: Personal dictionary for proper noun spelling/capitalization ("Bobby" vs "Bobbie", "Svelte" vs "Zvelte").
 
-**Current spec:** Literal string matching assumes whitespace-separated tokens. Multi-word keys "match across token boundaries" (line 235) but no detail on how. No handling of provider tokenization artifacts where compound words get split.
+**The problem:** STT engines tokenize audio into words independently. Compound proper nouns get split at syllable/word boundaries:
 
-**Gap:** Users need rules like `"Chat G P T" → "ChatGPT"` where the input has been incorrectly tokenized by the STT provider. This is distinct from simple phrase matching — it requires fuzzy/n-gram awareness.
+| User says     | STT outputs                | Should be   |
+| ------------- | -------------------------- | ----------- |
+| "ChargeBee"   | "Charge B" or "Charge Bee" | ChargeBee   |
+| "ChatGPT"     | "Chat G P T"               | ChatGPT     |
+| "MacBook Pro" | "Mac Book Pro"             | MacBook Pro |
+| "HTML"        | "H T M L"                  | HTML        |
 
-**Recommendation:** Document how the runner handles multi-word literal keys across token boundaries. Consider a `fuzzy` or `ngram` option for custom vocabulary rules that need to match split compounds. Handy's implementation (1-3 word sliding window) is a proven approach.
+No single input token matches the custom word. "Charge" doesn't match "ChargeBee". A naive word-by-word matcher can't fix these — you need to consider consecutive tokens together.
+
+This also affects: acronyms spoken as letters ("A P I" → "API"), spelled-out words ("S T E V E" → "Steve"), and multi-word proper nouns with inconsistent capitalization.
+
+**Current spec:** Literal string matching says multi-word keys "match across token boundaries" but that's phrase matching ("question mark" matches two consecutive words). The n-gram problem is the reverse: the _custom word_ is a single token ("ChargeBee") but the _input_ has been split by the STT provider.
+
+**Handy's approach (PR #711):** Sliding window over 1–3 consecutive words, greedy longest-match-first:
+
+1. Pre-compute each custom word with spaces removed and lowercased ("ChargeBee" → "chargebee")
+2. Walk through input tokens. At each position, try 3-word window first, then 2, then 1
+3. For each window, concatenate the tokens (strip punctuation, lowercase): `["Charge", "B"]` → `"chargeb"`
+4. Fuzzy-match that concatenation against the custom words using Levenshtein distance + Soundex phonetic matching
+5. If match found, replace the entire window with the custom word, preserving case and punctuation
+
+**Limitation:** The fixed 3-token window is too small for some cases ("Chat G P T" is 4 tokens, "H T M L" is 4). The PR's test passes for "Chat G P T" only because the fuzzy matching threshold is loose enough that a 3-token partial concatenation gets close. This is fragile — a 5-token split would fail. The max window size should be derived from the vocabulary itself (e.g., longest word's character count as a ceiling), not hardcoded.
+
+**Resolution:** This is a `transform()` use case, not a `rules` use case. The literal matcher should stay simple (exact phrase matching). N-gram vocabulary reconciliation is a scanning algorithm that belongs in a preset `transform()` function with a `settings.words` list:
+
+```typescript
+// custom-vocabulary.transform.ts
+
+export const meta = {
+	name: 'Custom Vocabulary',
+	description: 'Fix compound words split by STT'
+};
+
+export const settings = {
+	words: {
+		type: 'list' as const,
+		label: 'Custom words',
+		item: { type: 'string' },
+		default: []
+	},
+	match: {
+		type: 'select' as const,
+		label: 'Matching strategy',
+		options: ['exact', 'levenshtein', 'phonetic'],
+		default: 'exact'
+	}
+};
+
+export function transform(text: string, config): string {
+	// Derive max window size from vocabulary
+	// Sliding window scan, concatenate tokens, compare against words
+	// Replace matches, preserve case and punctuation
+}
+```
+
+The `settings.words` list renders as a tag/chip input in the GUI — non-programmers can add vocabulary without understanding n-grams. The runner derives the window size from the vocabulary, so users don't need to reason about how their STT provider tokenizes.
+
+If profiling later shows that multiple scripts each scanning sliding windows is a bottleneck, promote to a runner primitive with the same script-facing API. Start as a preset, optimize if needed.
+
+The spec should note in the Match Patterns section that token-boundary reconciliation (compound words split by STT) is handled via `transform()`, not the literal matcher — so users don't expect `"ChatGPT": "ChatGPT"` in rules to fix "Chat G P T".
 
 ---
 
@@ -89,7 +146,7 @@ The pipeline model is the single biggest differentiator — Whispering's #1 pain
 
 ### Gap 3: External Command Filter
 
-**Priority: HIGH**
+**Priority: LOW** (downgraded — see resolution)
 
 **Evidence:**
 
@@ -97,62 +154,61 @@ The pipeline model is the single biggest differentiator — Whispering's #1 pain
 - Handy PR #739 (open): General stdin/stdout command filter for post-processing. User pipes text through any external program.
 - Handy PR #638 (open): "External script" paste method — pass text to user-defined script before pasting, enabling context-aware processing.
 
-**Current spec:** Sandboxing section (line 419) restricts scripts to Web Workers — no DOM, no network, no filesystem. No escape hatch for desktop users who want to invoke external processes.
+**Current spec:** Sandboxing section restricts scripts to Web Workers — no DOM, no network, no filesystem. No escape hatch for desktop users who want to invoke external processes.
 
-**Gap:** Three independent requests across both projects for piping transcription through arbitrary external commands. This is a real power-user demand, not a niche ask. It only applies in the Tauri/desktop context (not web).
+**Context:** Both Whispering and Handy have limited transformation systems (find-replace steps, LLM prompts). Users in those ecosystems reach for external scripts because the built-in transform capabilities aren't expressive enough. When your only tool is a find-replace box, shelling out to Python is the natural escape hatch.
 
-**Recommendation:** Add a `mode: 'external'` transform type:
+**Resolution:** RIFT transforms are already scripts — full TypeScript/Civet modules with `transform()` functions that can implement arbitrary logic. The use cases driving external command requests (context-aware formatting, custom text processing, chaining multiple operations) are directly expressible as `.transform.ts` files without leaving the sandbox. The vibe-coding workflow (describe a transform to an LLM, get a working script) further reduces the need.
 
-```typescript
-export const meta = {
-	name: 'Custom Filter',
-	runtime: 'external' // opts out of Web Worker sandbox
-};
+The remaining legitimate use case for external commands is **side effects** — machine control via voice, triggering OS automation, writing to files. That's delivery/action, not text transformation, and is out of scope for the transforms spec.
 
-export const settings = {
-	command: {
-		type: 'string',
-		label: 'Shell command',
-		default: 'python3 ~/scripts/fix-text.py'
-	}
-};
-
-// Runner pipes text through the command via stdin/stdout
-```
-
-Document the security tradeoff explicitly: external commands can do anything. Only available in desktop builds. Requires user opt-in per script (not a blanket permission).
+Note in the spec's Sandboxing section that the script format's expressiveness is a deliberate alternative to external command piping. If a real need for external process invocation emerges after launch, it can be added as a permission-gated capability without changing the script format.
 
 ---
 
-### Gap 4: Template Variables / Transform Context
+### Gap 4: Transform Context
 
-**Priority: MEDIUM-HIGH**
+**Priority: HIGH** (architectural — changes the function signature contract)
 
 **Evidence:**
 
 - Whispering #1151: "Local file context for transformations" — access to the document being dictated into, proposes `{{context}}` template variable.
 - Handy PR #704 (open): Adds `$time_local`, `$current_app`, `$short_prev_transcript`, `$language` variables for LLM post-processing prompts.
 - Handy #499 (closed/fixed): Bug where `${output}` placeholder wasn't substituted in LLM prompt.
+- Gap 9 (language-aware selection) collapses into this: if transforms have access to transcript metadata including detected language, then language filtering is just a runner feature that reads `meta.language` and compares against `context.language`.
 
-**Current spec:** `config` is passed as a second argument to rule functions (line 144) but the spec doesn't define what runtime context is available beyond user settings.
+**Current spec:** `config` is passed as a second argument to rule functions but only contains user settings. The runner already has transcript metadata (for provider tags like `#Speaker0`, `#LowConfidence`) but doesn't expose it to `transform()` or rule functions.
 
-**Gap:** LLM-powered transforms and context-aware rules need access to runtime state: detected language, focused application, previous transcription, selected text, clipboard contents. Both projects independently invented template variable systems for this.
+**Gap:** Both projects independently invented template variable systems because transforms need runtime state beyond user settings. The spec's `config` argument needs to expand.
 
-**Recommendation:** Define a standard `TransformContext` interface:
+**Candidate fields:**
 
-```typescript
-interface TransformContext {
-	language: string; // detected transcription language (ISO 639-1)
-	currentApp?: string; // focused application name (desktop only)
-	previousText?: string; // previous transcription (for continuity)
-	selectedText?: string; // text selection in TranscribeArea
-	clipboardText?: string; // current clipboard contents
-	timestamp: Date; // when the transcription was captured
-	settings: Record<string, unknown>; // user-configured script settings
-}
-```
+| Field           | Source                | Use case                                                    |
+| --------------- | --------------------- | ----------------------------------------------------------- |
+| `language`      | Transcript metadata   | Filter rules by language, format numbers/dates by locale    |
+| `currentApp`    | OS (desktop only)     | Adapt formality for Slack vs email vs code editor           |
+| `previousText`  | Transcription history | Continuity — don't re-capitalize if continuing mid-sentence |
+| `selectedText`  | TranscribeArea        | Manual transforms operate on selection                      |
+| `clipboardText` | OS                    | Transform arbitrary clipboard text (Whispering #835)        |
+| `timestamp`     | Runtime               | Dynamic values (date/time rules already need this)          |
 
-This replaces ad-hoc template variables with a typed object. Passed as the second argument to both `transform()` and rule functions.
+**Risks:**
+
+1. **Non-determinism.** A rule that reads `currentApp` or `timestamp` produces different output for the same input text. Makes testing harder, makes GUI preview less reliable (preview doesn't know what app you'll paste into). The existing dynamic value rules (`"today's date": () => new Date()`) already have this problem — expanding the surface area increases it.
+
+2. **Privacy / sandboxing tension.** Scripts run in a Web Worker sandbox. Exposing `currentApp`, `clipboardText`, or `previousText` means the sandbox has access to state outside the transcription. A malicious community preset could read clipboard contents. The spec already says "no network by default" so the data can't leave the worker without explicit permission — but it's still a wider attack surface than pure text-in/text-out.
+
+3. **Platform divergence.** `currentApp` only exists on desktop (Tauri). `clipboardText` may require permissions on some platforms. Scripts that depend on context fields unavailable everywhere become non-portable. A script written for desktop that reads `currentApp` silently gets `undefined` on web.
+
+4. **API stability.** Once scripts depend on context fields, the shape becomes a contract. Adding fields is fine; renaming or removing them breaks community scripts.
+
+**Mitigations:**
+
+- Context fields are **opt-in per script** via a capabilities declaration in `meta` (similar to how the spec already handles network access). The runner only populates fields the script declares it needs.
+- Fields that aren't available return `undefined`, not errors — scripts must handle absence.
+- GUI preview passes a synthetic context (current time, no app, no clipboard) so previews remain useful.
+
+**Resolution:** The spec's `config` argument should expand to include runtime context alongside user settings. Defer the exact `TransformContext` interface shape — note that it will include transcript metadata and runtime state, list the candidate fields and risks, and let implementation drive the final API. The key architectural decision is: scripts can access context, gated by declared capabilities.
 
 ---
 
@@ -348,6 +404,27 @@ The runner auto-filters scripts by detected transcription language. Scripts with
 
 ---
 
+## Summary
+
+| Priority | Gap                                 | Category          | Spec impact                                                                                                                   |
+| -------- | ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| HIGH     | 4. Transform context                | Architectural     | Changes function signature contract; scripts need runtime state (language, app, previous text) gated by capabilities          |
+| HIGH     | 1. N-gram vocabulary matching       | Preset            | `transform()` use case, not a runner primitive; needs Match Patterns note that literal matcher doesn't handle split compounds |
+| LOW      | 2. Hallucination / artifact cleanup | Preset            | "Transcription Cleanup" preset; minor question on whether runner auto-strips invisible characters                             |
+| LOW      | 3. External command filter          | Out of scope      | Script expressiveness reduces need; remaining use case is delivery/side effects                                               |
+| —        | 5. Config portability               | Out of scope      | App-level concern, not transforms spec                                                                                        |
+| —        | 6. Number normalization             | Preset            | Appendix addition; `#Value` + `toNumber` already in spec                                                                      |
+| —        | 7. Voice-prompted transforms        | App-level         | Stop-word → slash menu; not a script concern                                                                                  |
+| —        | 8. Output delivery hooks            | Out of scope      | Post-transform delivery, not transforms                                                                                       |
+| —        | 9. Language-aware selection         | Subsumed by Gap 4 | `meta.language` + `context.language` in runner                                                                                |
+| —        | 10. Translation                     | Preset            | Async `transform()` calling LLM; not architectural                                                                            |
+| —        | 11. LLM prompt guardrails           | Documentation     | Prompt structure guidance, not a spec change                                                                                  |
+| —        | 12. Contraction reversal            | Documentation     | One-line note on existing preset                                                                                              |
+
+**Architectural gaps:** Only Gap 4 (TransformContext) requires a spec change to the core model. Gap 1 (n-gram) requires a note clarifying what literal matching does and doesn't handle, plus a preset example. Everything else is presets, documentation, or out of scope.
+
+---
+
 ## Signals
 
 Patterns observed across both projects that inform design but don't represent specific gaps:
@@ -360,9 +437,9 @@ Whispering uses radio buttons for transforms — only one can be active at a tim
 
 Handy has already merged: filler word removal (PR #589), n-gram custom word matching (PR #711), and multiple LLM provider integrations. These are production implementations, not theoretical. The spec should match or exceed Handy's shipped baseline.
 
-### External script piping is a pattern
+### External script piping demand is reduced by script expressiveness
 
-Three independent requests across both projects (Whispering #1269, Handy PRs #739 and #638). The use cases range from "pipe through Python" to "context-aware formatting based on focused app" to "machine control via voice." This isn't a niche ask.
+Three independent requests across both projects (Whispering #1269, Handy PRs #739 and #638). However, these come from ecosystems where the built-in transform is a find-replace box or an LLM prompt — not a full scripting environment. RIFT's `.transform.ts` format covers the text-transformation use cases directly. The remaining demand (side effects, machine control) is delivery, not transforms.
 
 ### Config loss causes real pain
 

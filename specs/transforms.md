@@ -536,13 +536,10 @@ No universal standard exists for text replacement rules. Despite ubiquity across
 
 The following gaps were identified by reviewing 561 GitHub issues/PRs across Whispering and Handy. See [transforms-research.md](./transforms-research.md) for full evidence and source index.
 
-- **Multi-word / n-gram matching:** Compound words split by STT (e.g., "Chat G P T" → "ChatGPT"). Handy ships this (PR #711). The spec's literal matching needs detail on cross-token boundary behavior and possibly a `fuzzy`/`ngram` option.
+- **Multi-word / n-gram matching:** Compound words split by STT (e.g., "Chat G P T" → "ChatGPT"). Handy ships this (PR #711). This is a `transform()` use case, not a literal matcher extension — a "Custom Vocabulary" preset with a word list setting and sliding-window scan. The Match Patterns section should note that token-boundary reconciliation is handled via `transform()`, not rules.
+- **Transform context:** Both projects independently invented template variables (`$current_app`, `$language`, `$short_prev_transcript`). The spec's `config` argument should expand to include runtime context (detected language, focused app, previous text, etc.), gated by per-script capability declarations. Subsumes the language-aware selection gap — if scripts can read `context.language`, language filtering is a runner feature. See risks: non-determinism, privacy/sandboxing tension, platform divergence.
 - **Hallucination / artifact cleanup:** Repeated words, phantom phrases, invisible Unicode, bracketed metadata (`[AUDIO]`, `(pause)`). Universal across providers. Needs a "Transcription Cleanup" preset distinct from filler removal.
-- **External command filter:** Three independent requests for stdin/stdout piping through shell commands (Whispering #1269, Handy PRs #739, #638). Desktop-only, requires explicit security tradeoff.
-- **Transform context object:** Both projects independently invented template variables (`$current_app`, `$language`, `$short_prev_transcript`). Spec needs a typed `TransformContext` passed to `transform()` and rule functions.
-- **Config portability:** Users lose custom vocabulary on updates (Handy #602) and want cross-machine sync (Whispering #968, #1186). The spec needs a bundle export format beyond individual `.transform.ts` files.
 - **Number normalization preset:** Top-5 user request (Handy #611). `#Value` + `toNumber` exists in the spec but has no appendix preset.
-- **Language-aware script selection:** Multi-language users need auto-filtering by detected language. Add `meta.language` field so Chinese users don't get English filler removal.
 - **LLM prompt guardrails:** LLMs answer questions in transcription text instead of transforming them (Whispering #1145). Spec should document prompt structure that separates content from instruction.
 
 ---

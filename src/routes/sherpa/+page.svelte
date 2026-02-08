@@ -12,9 +12,9 @@ cp -r sherpa-onnx-v1.12.23-osx-universal2-shared/lib .`,
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
 tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2`,
 
-		'model-large': `cd ~/sherpa-onnx && mkdir -p models && cd models
-wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2
-tar xf sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2`,
+		'model-best': `cd ~/sherpa-onnx && mkdir -p models && cd models
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2
+tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2`,
 
 		'start-small': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
   --port=6006 \\
@@ -25,23 +25,23 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2`,
   --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx \\
   --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx`,
 
-		'start-large-fp32': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
+		'start-best-fp32': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
   --port=6006 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/tokens.txt \\
-  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/encoder-epoch-99-avg-1-chunk-16-left-128.onnx \\
-  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/decoder-epoch-99-avg-1-chunk-16-left-128.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/joiner-epoch-99-avg-1-chunk-16-left-128.onnx`,
+  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/tokens.txt \\
+  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/encoder-epoch-99-avg-1.onnx \\
+  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/decoder-epoch-99-avg-1.onnx \\
+  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/joiner-epoch-99-avg-1.onnx`,
 
-		'start-large-int8': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
+		'start-best-int8': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
   --port=6006 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/tokens.txt \\
-  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx \\
-  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx`
+  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/tokens.txt \\
+  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/encoder-epoch-99-avg-1.int8.onnx \\
+  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/decoder-epoch-99-avg-1.int8.onnx \\
+  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/joiner-epoch-99-avg-1.int8.onnx`
 	};
 
 	let copiedId = $state('');
@@ -96,6 +96,18 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2`,
 
 	<h2>2. Download a Model</h2>
 
+	<h3>Best accuracy model (~546 MB, best WER, recommended)</h3>
+	<div class="code-block">
+		<button class="copy-btn" onclick={() => copyCode('model-best')}>
+			{copiedId === 'model-best' ? '✓' : 'Copy'}
+		</button>
+		<pre><code>{codeBlocks['model-best']}</code></pre>
+	</div>
+	<p class="note">
+		<strong>Note:</strong> Trained on LibriSpeech + GigaSpeech. Best accuracy (WER 2.2% clean). Outputs
+		ALL CAPS.
+	</p>
+
 	<h3>Small model (~55 MB, faster, lower accuracy)</h3>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('model-small')}>
@@ -103,18 +115,6 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2`,
 		</button>
 		<pre><code>{codeBlocks['model-small']}</code></pre>
 	</div>
-
-	<h3>Large model (~296 MB, slower, higher accuracy)</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('model-large')}>
-			{copiedId === 'model-large' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['model-large']}</code></pre>
-	</div>
-
-	<p class="note">
-		<strong>Note:</strong> The large model outputs ALL CAPS (trained on LibriSpeech).
-	</p>
 
 	<p>
 		For all available models:
@@ -129,28 +129,28 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2`,
 
 	<h2>3. Start the Server</h2>
 
+	<h3>With best model (fp32 — recommended):</h3>
+	<div class="code-block">
+		<button class="copy-btn" onclick={() => copyCode('start-best-fp32')}>
+			{copiedId === 'start-best-fp32' ? '✓' : 'Copy'}
+		</button>
+		<pre><code>{codeBlocks['start-best-fp32']}</code></pre>
+	</div>
+
+	<h3>With best model (int8 — faster, slightly less accurate):</h3>
+	<div class="code-block">
+		<button class="copy-btn" onclick={() => copyCode('start-best-int8')}>
+			{copiedId === 'start-best-int8' ? '✓' : 'Copy'}
+		</button>
+		<pre><code>{codeBlocks['start-best-int8']}</code></pre>
+	</div>
+
 	<h3>With small model (kroko):</h3>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('start-small')}>
 			{copiedId === 'start-small' ? '✓' : 'Copy'}
 		</button>
 		<pre><code>{codeBlocks['start-small']}</code></pre>
-	</div>
-
-	<h3>With large model (fp32):</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('start-large-fp32')}>
-			{copiedId === 'start-large-fp32' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['start-large-fp32']}</code></pre>
-	</div>
-
-	<h3>With large model (int8 — faster, slightly less accurate):</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('start-large-int8')}>
-			{copiedId === 'start-large-int8' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['start-large-int8']}</code></pre>
 	</div>
 
 	<h2>Server Flags</h2>

@@ -859,20 +859,84 @@ This makes the R&D portable:
 - **In Whispering**: the existing recording pipeline (global hotkey, toolbar, VAD) feeds `Transcript` events into the same component
 - **In Handy**: whatever trigger mechanism they use, same component
 
-### Input Contract
+### How Text Enters an Input Element
 
-The component receives transcription results via a method, not props:
+Every way text gets into a textarea follows the same pattern: events fire _on the element_. The element is a sink for input events from multiple sources.
 
-```typescript
-// Consumer calls this when a transcription result arrives
-transcribeArea.handleTranscript(result: Transcript): void
+| Source                          | Events on the element                                                                         | Composition?             |
+| ------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------ |
+| **Keyboard**                    | `keydown` → `input` → `keyup`                                                                 | No                       |
+| **IME** (CJK, etc.)             | `compositionstart` → `compositionupdate` + `input` (isComposing) → `compositionend` → `input` | Yes                      |
+| **Pen/stylus handwriting**      | OS handwriting recognizer → arrives as composition events                                     | Yes                      |
+| **OS dictation** (system-level) | OS speech service → arrives as composition events or direct `input`                           | Yes (platform-dependent) |
+| **Voice (Web Speech API)**      | Events fire on a separate `SpeechRecognition` object. **Nothing hits the textarea.**          | **Gap**                  |
+
+Pen handwriting is the most instructive comparison: the user draws strokes, the OS recognizes characters, and the result arrives at the textarea as composition events — the element never sees raw strokes. The [EditContext API](https://developer.mozilla.org/en-US/docs/Web/API/EditContext_API) (experimental) makes this pipeline explicit:
+
+```
+User → Input method software → OS text input service → Text edit context → Editable region
 ```
 
-**Why a method instead of props (`interimText` / `isTranscribing`):**
+Voice via Web Speech API is the odd one out. Every other indirect text input method goes through the OS text input service and arrives as events on the element. Voice bypasses this entirely. **TranscribeArea fills this gap** — it makes voice input behave like every other text input source.
 
-- The component manages the interim→final lifecycle internally — it needs to track `segmentId` to know which interim to replace when a new partial arrives, and when to commit text on `isFinal`
-- Props would force the consumer to manage state that the component understands better (which segment is active, what to replace)
-- A method maps naturally to the event-driven nature of transcription callbacks: `backend.onResult = (t) => transcribeArea.handleTranscript(t)`
+### Voice Input as IME Composition
+
+Voice input maps 1:1 to [IME composition](https://developer.mozilla.org/en-US/docs/Glossary/Input_method_editor). One utterance = one composition session:
+
+| Composition event   | IME trigger                    | Voice trigger                            |
+| ------------------- | ------------------------------ | ---------------------------------------- |
+| `compositionstart`  | User begins typing in IME mode | Speech starts (first interim arrives)    |
+| `compositionupdate` | Candidate string changes       | New interim result (partial recognition) |
+| `compositionend`    | User confirms candidate        | `isFinal: true` from backend             |
+
+Browsers have [`compositionstart`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionstart_event), [`compositionupdate`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionupdate_event), [`compositionend`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionend_event) events for exactly this lifecycle:
+
+```
+compositionstart  → { data: "" }              // speech starts
+compositionupdate → { data: "hello" }         // interim result
+compositionupdate → { data: "hello world" }   // more words recognized
+compositionend    → { data: "Hello world." }  // isFinal: true
+input             → value updated              // text committed
+```
+
+While composition is active, `input` events fire but are marked with `event.isComposing === true`, so well-behaved code can ignore half-formed input.
+
+**Cursor interrupt** maps to ending one composition and starting another:
+
+```
+compositionend    → old utterance committed/discarded at old position
+compositionstart  → new utterance begins at new cursor position
+```
+
+**The analogy holds — differences are of degree, not kind:**
+
+|                          | IME                                                                  | Voice                                                        |
+| ------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Buffer length            | characters → full sentence (CJK routinely composes entire sentences) | words → full sentence                                        |
+| Revision of earlier text | Normal (whole buffer changes as context shifts)                      | Normal (whole interim revises as model processes more audio) |
+| Once finalized           | Text won't change                                                    | Text won't change (`isFinal: true`)                          |
+| What triggers updates    | Keystroke                                                            | Network/model (async)                                        |
+| Concurrent compositions  | One at a time                                                        | One at a time (one active utterance)                         |
+
+The only structural difference is **async timing**: IME updates arrive in response to user keystrokes; voice updates arrive asynchronously from the network/model. But `compositionupdate` doesn't specify _what triggers it_ — just that the composition buffer changed.
+
+### Input Contract
+
+The component receives `Transcript` events — the same way a textarea receives `input` and `composition` events. Voice results are input events pushed _into_ the component, not props observed by it.
+
+```typescript
+// Consumer wires the transcription backend to the component
+backend.onResult = (transcript) => {
+	// Dispatches composition events on the component internally
+	transcribeArea.handleTranscript(transcript);
+};
+```
+
+The component manages the composition lifecycle internally:
+
+- Interim (`isFinal: false`) → active composition, display with visual distinction
+- Final (`isFinal: true`) → end composition, commit text into value
+- Tracks `segmentId` to know which interim to replace on each update
 
 **What maps cleanly from textarea:**
 
@@ -883,43 +947,17 @@ transcribeArea.handleTranscript(result: Transcript): void
 - Selection/cursor — insertion point for new speech
 - Copy/paste still works
 
-**What the consumer owns:** mic access, recording start/stop, backend selection, feeding `Transcript` events to the component
+**What the consumer owns:** mic access, recording start/stop, backend selection, pushing `Transcript` events into the component
 
-**What the component owns:** displaying text (typed + transcribed), managing interim→final replacement via `segmentId`, cursor/insertion behavior
-
-### Voice Input as IME Composition
-
-Voice input behaves like an [IME (Input Method Editor)](https://developer.mozilla.org/en-US/docs/Glossary/Input_method_editor). CJK input has the same lifecycle:
-
-1. User starts composing → interim/candidate text appears (uncommitted)
-2. Composition updates → candidates change
-3. User confirms → text commits into the value
-
-Voice streaming follows the same pattern:
-
-1. Speech starts → interim text appears
-2. More words recognized → interim updates
-3. Utterance finalizes → text commits
-
-Browsers have [`compositionstart`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionstart_event), [`compositionupdate`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionupdate_event), [`compositionend`](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionend_event) events for exactly this pattern:
-
-```
-compositionstart  → { data: "" }              // mic starts hearing speech
-compositionupdate → { data: "hello" }         // interim result
-compositionupdate → { data: "hello world" }   // more words recognized
-compositionend    → { data: "Hello world." }  // utterance finalized
-input             → value updated
-```
-
-While composition is active, `input` events fire but are marked with `event.isComposing === true`, so well-behaved code can ignore half-formed input.
+**What the component owns:** composition lifecycle (interim→final), visual distinction of uncommitted text, cursor/insertion behavior
 
 ### Implementation Options
 
 1. **Dispatch real CompositionEvents** — the textarea/contenteditable natively handles uncommitted text display (underlined by default). Any code already handling composition correctly (framework input bindings, etc.) just works. Risk: browsers may not expect synthetic composition events from JavaScript; behavior could be inconsistent.
 
-2. **Mirror the pattern conceptually** — use the same lifecycle (props like `interimText` + `isComposing`) but handle the display yourself. More control, more portable across frameworks.
+2. **Mirror the pattern conceptually** — implement the same lifecycle internally but handle the display yourself (custom events, ProseMirror decorations, etc.). More control, more portable across frameworks. Avoids colliding with a real IME session if the user has one active.
 
-Option 2 is more practical for a prototype, but the mental model from option 1 is correct: voice input is a composition session, and the TranscribeArea is a text input that understands composition from multiple sources.
+Option 2 is more practical for a prototype, but the mental model from option 1 is correct: **voice input is a composition session, and the TranscribeArea is a text input that treats voice the same way the platform already treats IME and handwriting.**
 
 ### Interim Text Display
 

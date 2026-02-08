@@ -1,0 +1,1358 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Transform Rules — GUI Mockup</title>
+		<style>
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
+			}
+
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 14px;
+				color: #1a1a1a;
+				background: #fff;
+				max-width: 640px;
+				margin: 0 auto;
+				padding: 24px 16px;
+			}
+
+			h1 {
+				font-size: 18px;
+				font-weight: 600;
+				margin: 0 0 16px;
+			}
+
+			/* ── Profile selector ── */
+
+			.profile-bar {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 20px;
+			}
+
+			.profile-bar label {
+				font-size: 13px;
+				color: #555;
+			}
+
+			.profile-bar select {
+				padding: 6px 8px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-size: 14px;
+				font-family: inherit;
+			}
+
+			/* ── Script card ── */
+
+			.script-card {
+				border: 1px solid #ddd;
+				border-radius: 6px;
+				margin-bottom: 16px;
+				overflow: hidden;
+			}
+
+			.script-header {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 10px 14px;
+				background: #f5f5f5;
+				cursor: pointer;
+				user-select: none;
+			}
+
+			.script-header:hover {
+				background: #e8e8e8;
+			}
+
+			.script-toggle {
+				flex-shrink: 0;
+			}
+
+			.script-name {
+				font-weight: 600;
+				font-size: 14px;
+				flex: 1;
+			}
+
+			.script-desc {
+				font-size: 12px;
+				color: #888;
+			}
+
+			.script-chevron {
+				flex-shrink: 0;
+				font-size: 12px;
+				color: #999;
+				transition: transform 0.15s;
+			}
+
+			.script-card.open .script-chevron {
+				transform: rotate(90deg);
+			}
+
+			/* ── Rules table ── */
+
+			.rules-body {
+				display: none;
+			}
+
+			.script-card.open .rules-body {
+				display: block;
+			}
+
+			.category-header {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 6px 14px;
+				font-size: 11px;
+				font-weight: 600;
+				color: #888;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+				background: #fafafa;
+				border-top: 1px solid #eee;
+			}
+
+			.category-header .cat-check {
+				flex-shrink: 0;
+			}
+
+			.category-header span {
+				flex: 1;
+			}
+
+			.rule-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 7px 14px;
+				border-top: 1px solid #f5f5f5;
+			}
+
+			.rule-row:hover {
+				background: #fafafa;
+			}
+
+			.rule-row.disabled {
+				opacity: 0.45;
+			}
+
+			.rule-check {
+				flex-shrink: 0;
+			}
+
+			.rule-match {
+				width: 160px;
+				flex-shrink: 0;
+				font-family: 'Courier New', Courier, monospace;
+				font-size: 13px;
+				color: #333;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			.rule-arrow {
+				flex-shrink: 0;
+				color: #ccc;
+				font-size: 12px;
+			}
+
+			.rule-replace {
+				flex: 1;
+				font-family: 'Courier New', Courier, monospace;
+				font-size: 13px;
+				color: #333;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			.rule-replace .meta {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-style: italic;
+				color: #999;
+				font-size: 12px;
+			}
+
+			.rule-replace .fn-badge {
+				display: inline-block;
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 11px;
+				color: #666;
+				background: #f0f0f0;
+				border-radius: 3px;
+				padding: 1px 5px;
+			}
+
+			/* ── Toggle switch ── */
+
+			.toggle {
+				position: relative;
+				display: inline-block;
+				width: 34px;
+				height: 20px;
+			}
+
+			.toggle input {
+				opacity: 0;
+				width: 0;
+				height: 0;
+			}
+
+			.toggle .slider {
+				position: absolute;
+				inset: 0;
+				background: #ccc;
+				border-radius: 20px;
+				transition: background 0.15s;
+				cursor: pointer;
+			}
+
+			.toggle .slider::before {
+				content: '';
+				position: absolute;
+				width: 14px;
+				height: 14px;
+				left: 3px;
+				bottom: 3px;
+				background: #fff;
+				border-radius: 50%;
+				transition: transform 0.15s;
+			}
+
+			.toggle input:checked + .slider {
+				background: #4a90d9;
+			}
+
+			.toggle input:checked + .slider::before {
+				transform: translateX(14px);
+			}
+
+			/* ── Footer / add row ── */
+
+			.add-rule {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 14px;
+				border-top: 1px solid #eee;
+			}
+
+			.add-rule input {
+				padding: 5px 8px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-size: 13px;
+				font-family: 'Courier New', Courier, monospace;
+			}
+
+			.add-rule input:focus {
+				outline: 2px solid #4a90d9;
+				outline-offset: -1px;
+			}
+
+			.add-rule input.match-input {
+				width: 150px;
+			}
+
+			.add-rule input.replace-input {
+				flex: 1;
+			}
+
+			.add-btn {
+				padding: 5px 12px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				background: #f5f5f5;
+				font-size: 13px;
+				cursor: pointer;
+			}
+
+			.add-btn:hover {
+				background: #e8e8e8;
+			}
+
+			/* ── Global filter ── */
+
+			.global-filter {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 16px;
+			}
+
+			.global-filter input {
+				flex: 1;
+				padding: 7px 10px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-size: 14px;
+				font-family: inherit;
+			}
+
+			.global-filter input:focus {
+				outline: 2px solid #4a90d9;
+				outline-offset: -1px;
+			}
+
+			.global-filter .filter-count {
+				font-size: 12px;
+				color: #999;
+				white-space: nowrap;
+			}
+
+			.rule-row.filter-hidden {
+				display: none;
+			}
+
+			.select-all-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 6px 14px;
+				border-bottom: 1px solid #eee;
+				font-size: 12px;
+				color: #888;
+			}
+
+			.select-all-row label {
+				cursor: pointer;
+				user-select: none;
+			}
+
+			.script-card.filter-hidden {
+				display: none;
+			}
+
+			/* When filtering, force all matched cards open */
+			.script-card.filter-open .rules-body {
+				display: block;
+			}
+
+			.script-card.filter-open .script-chevron {
+				transform: rotate(90deg);
+			}
+
+			/* Hide add-rule rows while filtering */
+			.script-card.filter-open .add-rule {
+				display: none;
+			}
+
+			.rule-row.filter-highlight mark {
+				background: #fff3aa;
+				color: inherit;
+				border-radius: 2px;
+				padding: 0 1px;
+			}
+
+			/* ── Rule type badges ── */
+
+			.rule-match .tag-badge {
+				display: inline-block;
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 10px;
+				font-weight: 600;
+				color: #7c5cbf;
+				background: #f3eef9;
+				border-radius: 3px;
+				padding: 1px 5px;
+				margin-left: 4px;
+				vertical-align: middle;
+				text-transform: uppercase;
+				letter-spacing: 0.3px;
+			}
+
+			.rule-match .tag-badge.provider {
+				color: #2e7d32;
+				background: #e8f5e9;
+			}
+
+			.rule-match .regex-badge {
+				display: inline-block;
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 10px;
+				font-weight: 600;
+				color: #c26200;
+				background: #fff3e0;
+				border-radius: 3px;
+				padding: 1px 5px;
+				margin-left: 4px;
+				vertical-align: middle;
+			}
+
+			/* Options pills shown under a rule row */
+			.rule-options {
+				display: flex;
+				gap: 6px;
+				padding: 2px 14px 6px 40px;
+				flex-wrap: wrap;
+			}
+
+			.rule-options .pill {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 10px;
+				color: #666;
+				background: #f0f0f0;
+				border-radius: 10px;
+				padding: 2px 8px;
+			}
+
+			/* Transform function row (no match column) */
+			.transform-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 14px;
+				border-top: 1px solid #eee;
+				background: #fafafa;
+			}
+
+			.transform-row .transform-icon {
+				flex-shrink: 0;
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 11px;
+				font-weight: 600;
+				color: #666;
+				background: #e8e8e8;
+				border-radius: 3px;
+				padding: 2px 6px;
+			}
+
+			.transform-row .transform-desc {
+				flex: 1;
+				font-size: 13px;
+				color: #555;
+			}
+
+			.transform-row .transform-trigger {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				font-size: 10px;
+				color: #888;
+				background: #f0f0f0;
+				border-radius: 3px;
+				padding: 2px 8px;
+			}
+
+			.transform-row.disabled {
+				opacity: 0.45;
+			}
+
+			/* Settings row */
+			.settings-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 7px 14px 7px 40px;
+				border-top: 1px solid #f5f5f5;
+				font-size: 13px;
+				color: #555;
+			}
+
+			.settings-row label {
+				flex: 1;
+			}
+
+			.settings-row select {
+				padding: 3px 6px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-size: 12px;
+				font-family: inherit;
+			}
+
+			.settings-row input[type='text'] {
+				padding: 3px 6px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-size: 12px;
+				font-family: 'Courier New', Courier, monospace;
+				width: 120px;
+			}
+
+			/* ── Status bar ── */
+
+			.status-bar {
+				margin-top: 24px;
+				padding: 8px 12px;
+				font-size: 12px;
+				color: #888;
+				background: #fafafa;
+				border: 1px solid #eee;
+				border-radius: 4px;
+			}
+
+			.status-bar strong {
+				color: #555;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Transform Rules</h1>
+
+		<!-- Profile selector -->
+		<div class="profile-bar">
+			<label for="profile">Profile:</label>
+			<select id="profile">
+				<option selected>Casual</option>
+				<option>Medical</option>
+				<option>Programming</option>
+			</select>
+		</div>
+
+		<!-- Global filter -->
+		<div class="global-filter">
+			<input
+				type="text"
+				id="global-filter-input"
+				placeholder="Filter all rules…"
+				oninput="filterAllRules(this)"
+			/>
+			<span class="filter-count" id="global-filter-count"></span>
+		</div>
+
+		<!-- ────────────────────────────────────────── -->
+		<!-- Script 1: English Punctuation              -->
+		<!-- ────────────────────────────────────────── -->
+		<div class="script-card open" id="card-punctuation">
+			<div class="script-header" onclick="this.parentElement.classList.toggle('open')">
+				<label class="toggle script-toggle" onclick="event.stopPropagation()">
+					<input type="checkbox" checked />
+					<span class="slider"></span>
+				</label>
+				<span class="script-name">English Punctuation</span>
+				<span class="script-desc">Spoken punctuation words → symbols</span>
+				<span class="script-chevron">▸</span>
+			</div>
+			<div class="rules-body">
+				<div class="select-all-row">
+					<input
+						type="checkbox"
+						class="select-all-check"
+						checked
+						onchange="toggleAllInCard(this)"
+					/>
+					<label onclick="this.previousElementSibling.click()">Select all</label>
+				</div>
+
+				<!-- Category: Sentence-ending -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Sentence-ending</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">period</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">.</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">full stop</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">.</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">question mark</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">?</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">exclamation mark</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">!</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">exclamation point</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">!</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">ellipsis</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">…</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">dot dot dot</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">…</span>
+				</div>
+
+				<!-- Category: Mid-sentence -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Mid-sentence</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">comma</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">,</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">colon</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">:</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">semicolon</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">;</span>
+				</div>
+
+				<!-- Category: Dashes & Marks -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Dashes &amp; marks</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">hyphen</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">-</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">em dash</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">—</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">m dash</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">—</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">en dash</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">–</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">n dash</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">–</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">apostrophe s</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">'s</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">apostrophe</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">'</span>
+				</div>
+
+				<!-- Add custom rule -->
+				<div class="add-rule">
+					<input type="text" class="match-input" placeholder="match…" />
+					<span class="rule-arrow">→</span>
+					<input type="text" class="replace-input" placeholder="replace…" />
+					<button class="add-btn">Add</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- ────────────────────────────────────────── -->
+		<!-- Script 2: Filler Removal                   -->
+		<!-- ────────────────────────────────────────── -->
+		<div class="script-card" id="card-filler">
+			<div class="script-header" onclick="this.parentElement.classList.toggle('open')">
+				<label class="toggle script-toggle" onclick="event.stopPropagation()">
+					<input type="checkbox" checked />
+					<span class="slider"></span>
+				</label>
+				<span class="script-name">Filler Removal</span>
+				<span class="script-desc">Remove filler words and verbal tics</span>
+				<span class="script-chevron">▸</span>
+			</div>
+			<div class="rules-body">
+				<div class="select-all-row">
+					<input type="checkbox" class="select-all-check" onchange="toggleAllInCard(this)" />
+					<label onclick="this.previousElementSibling.click()">Select all</label>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">um</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">uh</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">er</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">you know</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">I mean</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">sort of</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">kind of</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">basically</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">actually</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row disabled">
+					<input type="checkbox" class="rule-check" />
+					<span class="rule-match">literally</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+
+				<!-- Add custom rule -->
+				<div class="add-rule">
+					<input type="text" class="match-input" placeholder="match…" />
+					<span class="rule-arrow">→</span>
+					<input type="text" class="replace-input" placeholder="replace…" />
+					<button class="add-btn">Add</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- ────────────────────────────────────────── -->
+		<!-- Script 3: Dynamic Values (collapsed)       -->
+		<!-- ────────────────────────────────────────── -->
+		<div class="script-card" id="card-dynamic">
+			<div class="script-header" onclick="this.parentElement.classList.toggle('open')">
+				<label class="toggle script-toggle" onclick="event.stopPropagation()">
+					<input type="checkbox" checked />
+					<span class="slider"></span>
+				</label>
+				<span class="script-name">Dynamic Values</span>
+				<span class="script-desc">Insert current date/time on demand</span>
+				<span class="script-chevron">▸</span>
+			</div>
+			<div class="rules-body">
+				<div class="select-all-row">
+					<input
+						type="checkbox"
+						class="select-all-check"
+						checked
+						onchange="toggleAllInCard(this)"
+					/>
+					<label onclick="this.previousElementSibling.click()">Select all</label>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">the date and time</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> current date + time</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">the date</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> current date</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">the time</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> current time</span>
+				</div>
+
+				<div class="add-rule">
+					<input type="text" class="match-input" placeholder="match…" />
+					<span class="rule-arrow">→</span>
+					<input type="text" class="replace-input" placeholder="replace…" />
+					<button class="add-btn">Add</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- ────────────────────────────────────────── -->
+		<!-- Script 4: Informal → Formal (disabled)     -->
+		<!-- ────────────────────────────────────────── -->
+		<div class="script-card" id="card-informal">
+			<div class="script-header" onclick="this.parentElement.classList.toggle('open')">
+				<label class="toggle script-toggle" onclick="event.stopPropagation()">
+					<input type="checkbox" />
+					<span class="slider"></span>
+				</label>
+				<span class="script-name" style="opacity: 0.5">Informal → Formal</span>
+				<span class="script-desc" style="opacity: 0.5">Expand informal contractions</span>
+				<span class="script-chevron">▸</span>
+			</div>
+			<div class="rules-body">
+				<div class="select-all-row">
+					<input
+						type="checkbox"
+						class="select-all-check"
+						checked
+						onchange="toggleAllInCard(this)"
+					/>
+					<label onclick="this.previousElementSibling.click()">Select all</label>
+				</div>
+				<div class="rule-row disabled">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">gonna</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">going to</span>
+				</div>
+				<div class="rule-row disabled">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">wanna</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">want to</span>
+				</div>
+				<div class="rule-row disabled">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">gotta</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">got to</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- ────────────────────────────────────────── -->
+		<!-- Script 5: Kitchen Sink                     -->
+		<!-- ────────────────────────────────────────── -->
+		<div class="script-card open" id="card-kitchen-sink">
+			<div class="script-header" onclick="this.parentElement.classList.toggle('open')">
+				<label class="toggle script-toggle" onclick="event.stopPropagation()">
+					<input type="checkbox" checked />
+					<span class="slider"></span>
+				</label>
+				<span class="script-name">Kitchen Sink</span>
+				<span class="script-desc">Every rule type in one script</span>
+				<span class="script-chevron">▸</span>
+			</div>
+			<div class="rules-body">
+				<div class="select-all-row">
+					<input
+						type="checkbox"
+						class="select-all-check"
+						checked
+						onchange="toggleAllInCard(this)"
+					/>
+					<label onclick="this.previousElementSibling.click()">Select all</label>
+				</div>
+
+				<!-- Literal string (simple) -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Literal strings</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">comma</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">,</span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">um</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">gonna</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">going to</span>
+				</div>
+
+				<!-- Object with options -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>With options</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">Dr.</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">Doctor</span>
+				</div>
+				<div class="rule-options">
+					<span class="pill">word boundary</span>
+					<span class="pill">propagate case</span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">addr</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace">123 Main St</span>
+				</div>
+				<div class="rule-options">
+					<span class="pill">word boundary</span>
+					<span class="pill">case sensitive</span>
+				</div>
+
+				<!-- Regex -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Regex</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match"
+						>\b(gonna|wanna|gotta)\b <span class="regex-badge">regex</span></span
+					>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> expand contraction</span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">\d{1,3}(,\d{3})* <span class="regex-badge">regex</span></span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> format number</span>
+				</div>
+
+				<!-- Compromise #Tag selectors -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>NLP tags</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">#Filler <span class="tag-badge">nlp</span></span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="meta">(remove)</span></span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">#Value <span class="tag-badge">nlp</span></span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> toNumber</span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">#Adjective #Noun <span class="tag-badge">nlp</span></span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> toLowerCase</span>
+				</div>
+
+				<!-- Provider tags -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Provider tags</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match"
+						>#LowConfidence <span class="tag-badge provider">provider</span></span
+					>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> highlight</span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">#Speaker0 <span class="tag-badge provider">provider</span></span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> prefix "Alice: "</span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">#Speaker1 <span class="tag-badge provider">provider</span></span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> prefix "Bob: "</span>
+				</div>
+
+				<!-- Function rules (computed, no static replacement) -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Computed values</span
+					>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">today's date</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> 2026-02-09</span>
+				</div>
+
+				<div class="rule-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="rule-match">current time</span>
+					<span class="rule-arrow">→</span>
+					<span class="rule-replace"><span class="fn-badge">ƒ</span> 3:42 PM</span>
+				</div>
+
+				<!-- Full-text transform() functions -->
+				<div class="category-header">
+					<input type="checkbox" class="cat-check" checked onchange="toggleCategory(this)" /><span
+						>Full-text transforms</span
+					>
+				</div>
+
+				<div class="transform-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="transform-icon">ƒ(text)</span>
+					<span class="transform-desc">Normalize whitespace — collapse multiple spaces, trim</span>
+					<span class="transform-trigger">auto</span>
+				</div>
+
+				<div class="transform-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="transform-icon">ƒ(text)</span>
+					<span class="transform-desc">Capitalize after sentence-ending punctuation</span>
+					<span class="transform-trigger">auto</span>
+				</div>
+
+				<div class="transform-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="transform-icon">ƒ(text)</span>
+					<span class="transform-desc">Rewrite for professional tone</span>
+					<span class="transform-trigger">hotkey ⌘⇧P</span>
+				</div>
+
+				<div class="transform-row">
+					<input type="checkbox" class="rule-check" checked />
+					<span class="transform-icon">ƒ(text)</span>
+					<span class="transform-desc">Translate to Spanish</span>
+					<span class="transform-trigger">command</span>
+				</div>
+
+				<!-- Settings -->
+				<div class="category-header"><span>Settings</span></div>
+
+				<div class="settings-row">
+					<label>Case style</label>
+					<select>
+						<option selected>sentence</option>
+						<option>title</option>
+						<option>lower</option>
+					</select>
+				</div>
+				<div class="settings-row">
+					<label>Auto-trim spaces around punctuation</label>
+					<label class="toggle" style="flex: none">
+						<input type="checkbox" checked />
+						<span class="slider"></span>
+					</label>
+				</div>
+				<div class="settings-row">
+					<label>Custom stop-words</label>
+					<input type="text" placeholder="word1, word2…" />
+				</div>
+			</div>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar">
+			<strong>Auto:</strong> English Punctuation, Filler Removal, Dynamic Values, Kitchen Sink
+			&nbsp;·&nbsp; <strong>Profile:</strong> Casual
+		</div>
+
+		<script>
+			// ── Filter ──
+
+			let preFilterState = null;
+
+			function filterAllRules(input) {
+				const query = input.value.trim().toLowerCase();
+				const cards = document.querySelectorAll('.script-card');
+				const countEl = document.getElementById('global-filter-count');
+				let totalMatches = 0;
+				let totalRules = 0;
+
+				if (query && !preFilterState) {
+					preFilterState = new Map();
+					for (const card of cards) {
+						preFilterState.set(card.id, card.classList.contains('open'));
+					}
+				}
+
+				for (const card of cards) {
+					const rows = card.querySelectorAll('.rule-row');
+					let cardMatches = 0;
+					totalRules += rows.length;
+
+					for (const row of rows) {
+						const matchEl = row.querySelector('.rule-match');
+						const replaceEl = row.querySelector('.rule-replace');
+
+						if (matchEl._original != null) matchEl.textContent = matchEl._original;
+						if (replaceEl._original != null) replaceEl.innerHTML = replaceEl._original;
+
+						if (!query) {
+							row.classList.remove('filter-hidden', 'filter-highlight');
+							continue;
+						}
+
+						if (matchEl._original == null) matchEl._original = matchEl.textContent;
+						if (replaceEl._original == null) replaceEl._original = replaceEl.innerHTML;
+
+						const matchText = matchEl._original.toLowerCase();
+						const replaceText = replaceEl.textContent.toLowerCase();
+						const hit = matchText.includes(query) || replaceText.includes(query);
+
+						if (hit) {
+							row.classList.remove('filter-hidden');
+							row.classList.add('filter-highlight');
+							matchEl.innerHTML = highlight(matchEl._original, query);
+							cardMatches++;
+						} else {
+							row.classList.add('filter-hidden');
+							row.classList.remove('filter-highlight');
+						}
+					}
+
+					if (query) {
+						if (cardMatches > 0) {
+							card.classList.remove('filter-hidden');
+							card.classList.add('filter-open');
+						} else {
+							card.classList.add('filter-hidden');
+							card.classList.remove('filter-open');
+						}
+					} else {
+						card.classList.remove('filter-hidden', 'filter-open');
+					}
+
+					totalMatches += cardMatches;
+				}
+
+				if (!query && preFilterState) {
+					for (const card of cards) {
+						if (preFilterState.get(card.id)) {
+							card.classList.add('open');
+						} else {
+							card.classList.remove('open');
+						}
+					}
+					preFilterState = null;
+				}
+
+				if (query) {
+					countEl.textContent = `${totalMatches} match${totalMatches !== 1 ? 'es' : ''}`;
+				} else {
+					countEl.textContent = '';
+				}
+			}
+
+			function highlight(text, query) {
+				const idx = text.toLowerCase().indexOf(query);
+				if (idx === -1) return text;
+				const before = text.slice(0, idx);
+				const match = text.slice(idx, idx + query.length);
+				const after = text.slice(idx + query.length);
+				return `${before}<mark>${match}</mark>${after}`;
+			}
+
+			// ── Card-level select all ──
+
+			function toggleAllInCard(selectAllCb) {
+				const body = selectAllCb.closest('.rules-body');
+				const newState = selectAllCb.checked;
+
+				// Set all rule checkboxes
+				for (const row of body.querySelectorAll('.rule-row')) {
+					const cb = row.querySelector('.rule-check');
+					if (cb) {
+						cb.checked = newState;
+						row.classList.toggle('disabled', !newState);
+					}
+				}
+
+				// Sync all category checkboxes in this card
+				for (const cat of body.querySelectorAll('.category-header')) {
+					const catCb = cat.querySelector('.cat-check');
+					if (catCb) {
+						catCb.checked = newState;
+						catCb.indeterminate = false;
+					}
+				}
+			}
+
+			// Sync the card-level select-all to reflect all rules' state
+			function syncSelectAll(body) {
+				const selectAllCb = body.querySelector('.select-all-check');
+				if (!selectAllCb) return;
+				const checks = [...body.querySelectorAll('.rule-check')];
+				const checkedCount = checks.filter((c) => c.checked).length;
+				if (checkedCount === 0) {
+					selectAllCb.checked = false;
+					selectAllCb.indeterminate = false;
+				} else if (checkedCount === checks.length) {
+					selectAllCb.checked = true;
+					selectAllCb.indeterminate = false;
+				} else {
+					selectAllCb.checked = false;
+					selectAllCb.indeterminate = true;
+				}
+			}
+
+			// ── Category-level check all ──
+
+			function toggleCategory(catCheckbox) {
+				const header = catCheckbox.closest('.category-header');
+				const rows = getCategoryRows(header);
+				const newState = catCheckbox.checked;
+				for (const row of rows) {
+					const cb = row.querySelector('.rule-check');
+					if (cb) {
+						cb.checked = newState;
+						row.classList.toggle('disabled', !newState);
+					}
+				}
+				// Sync card-level select-all
+				syncSelectAll(header.closest('.rules-body'));
+			}
+
+			function getCategoryRows(header) {
+				const rows = [];
+				let sibling = header.nextElementSibling;
+				while (
+					sibling &&
+					!sibling.classList.contains('category-header') &&
+					!sibling.classList.contains('add-rule')
+				) {
+					if (sibling.classList.contains('rule-row')) rows.push(sibling);
+					sibling = sibling.nextElementSibling;
+				}
+				return rows;
+			}
+
+			function syncCategoryCheckbox(header) {
+				const catCb = header.querySelector('.cat-check');
+				if (!catCb) return;
+				const rows = getCategoryRows(header);
+				const checks = rows.map((r) => r.querySelector('.rule-check')).filter(Boolean);
+				const checkedCount = checks.filter((c) => c.checked).length;
+				if (checkedCount === 0) {
+					catCb.checked = false;
+					catCb.indeterminate = false;
+				} else if (checkedCount === checks.length) {
+					catCb.checked = true;
+					catCb.indeterminate = false;
+				} else {
+					catCb.checked = false;
+					catCb.indeterminate = true;
+				}
+			}
+
+			// ── Wire up individual rule changes ──
+
+			document.addEventListener('change', (e) => {
+				if (!e.target.classList.contains('rule-check')) return;
+				const row = e.target.closest('.rule-row');
+				row.classList.toggle('disabled', !e.target.checked);
+
+				// Sync category checkbox above this row
+				let prev = row.previousElementSibling;
+				while (prev && !prev.classList.contains('category-header')) {
+					prev = prev.previousElementSibling;
+				}
+				if (prev) syncCategoryCheckbox(prev);
+
+				// Sync card-level select-all
+				syncSelectAll(row.closest('.rules-body'));
+			});
+
+			// ── Initialize checkbox states on load ──
+
+			document.addEventListener('DOMContentLoaded', () => {
+				for (const body of document.querySelectorAll('.rules-body')) {
+					// Sync card-level select-all
+					syncSelectAll(body);
+					// Sync each category checkbox
+					for (const cat of body.querySelectorAll('.category-header')) {
+						syncCategoryCheckbox(cat);
+					}
+				}
+			});
+		</script>
+	</body>
+</html>

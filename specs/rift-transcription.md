@@ -5,6 +5,22 @@
 - **Fluid:** switch between speaking and editing (ASR catches up in background)
 - **Time-travel:** undo any edit or play back audio in edited order
 
+## Project Purpose
+
+This project is a testing ground to prototype UX ideas for [Whispering](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering) and [Handy](https://handy.computer/). The concepts explored here are intended to validate approaches before integrating them into those production apps.
+
+### Key concepts being prototyped
+
+- **Realtime streaming transcription** — Words appear as you speak, with interim/partial results and multiple backend support. Distinct from Whispering's current batch model (record → stop → transcribe). See [streaming-transcription-demos](https://github.com/Leftium/rift-transcription/blob/main/reference/streaming-transcription-demos.md) and [Streaming Transcription Provider Comparison](https://github.com/Leftium/rift-transcription/blob/main/reference/whispering-io-analysis.md#streaming-transcription-provider-comparison) for research.
+
+- **Script-based transformation (pre/post processing)** — A sandboxed `script` transformation type that runs user-authored JavaScript (with TypeScript support) to process text locally — no API keys, no cost, no latency. Covers use cases like personal dictionaries, punctuation commands, filler word removal, and multi-step pipelines that Whispering's existing `find_replace` and `prompt_transform` types can't handle alone. See [whispering-script-transformation.md](https://github.com/Leftium/epicenter/blob/feat/script-transformation/specs/whispering-script-transformation.md) for the full spec.
+
+- **Actor model (isolated/swappable extensions)** — Each subsystem (recorder, transcriber, transformer, clipboard) runs as an isolated actor with private state, communicating only via message passing. Enables hot-swapping backends, fault isolation, and multi-core parallelism. See [Actor Model for Multi-Core Parallelism](https://github.com/Leftium/rift-transcription/blob/main/reference/epicenter-plugin-architecture-feasibility.md#actor-model-for-multi-core-parallelism) for the full architecture.
+
+- **Wide events (context)** — Rich, structured events that capture full app-level context (settings, environment, operation history) with every significant action — not just on errors. Enables one-click debug log export and "nothing happened" bug reproduction. See the [Wide Context Spec](https://github.com/Leftium/wellcrafted/blob/spec/context/specs/wide-context/README.md) and [sample event](https://github.com/Leftium/wellcrafted/blob/spec/context/specs/wide-context/sample-wide-context.json) for details.
+
+---
+
 ## Usage scenario
 
 1. Speak words `This is realtime transcription`

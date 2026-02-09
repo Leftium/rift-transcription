@@ -83,19 +83,15 @@
 <main>
 	<h1>RIFT TranscribeArea</h1>
 	<p class="intro">
-		Voice input that works like a textarea. Focus any input below and speak. See the <a
+		Voice input that works like a textarea. Enable voice input, then focus any input below and
+		speak. See the <a
 			href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
 			>spec</a
 		> for details.
 	</p>
 
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="input-group" {@attach voice.autoListen}>
+	<div class="input-group">
 		<div class="controls">
-			<button onclick={voice.toggle}>
-				{voice.enabled ? 'Disable Voice Input' : 'Enable Voice Input'}
-			</button>
-
 			<select value={voice.sourceType} onchange={(e) => voice.setSource(e.currentTarget.value)}>
 				<option value="web-speech">Web Speech API</option>
 				<option value="sherpa">Sherpa (local)</option>
@@ -121,6 +117,22 @@
 					size="28"
 				/>
 			{/if}
+		</div>
+
+		<div class="controls">
+			<button
+				onclick={async () => {
+					voice.toggle();
+					if (voice.enabled) {
+						// Wait for Svelte to flush inputmode="none" to the DOM
+						// before focusing — otherwise mobile keyboard appears briefly.
+						await tick();
+						transcribeAreaEl?.querySelector('textarea')?.focus();
+					}
+				}}
+			>
+				{voice.enabled ? 'Disable Voice Input' : 'Enable Voice Input'}
+			</button>
 
 			<span class="status">
 				<span class="dot" class:active={voice.listening}></span>
@@ -159,6 +171,7 @@
 					placeholder="Type or speak (with interims)..."
 					{showUtterances}
 					{showConfidence}
+					suppressKeyboard={voice.enabled}
 					debug
 				/>
 			</div>
@@ -175,6 +188,7 @@
 				class="plain-textarea"
 				bind:value={value1}
 				placeholder="Type or speak (finals only)..."
+				inputmode={voice.enabled ? 'none' : undefined}
 			></textarea>
 			<CopyButton value={value1} />
 		</section>
@@ -182,7 +196,11 @@
 		<section class="level">
 			<h2>Level 0: Plain <code>&lt;textarea&gt;</code></h2>
 			<p class="level-desc">No voice input. Baseline for comparison.</p>
-			<textarea class="plain-textarea" bind:value={value0} placeholder="Type here (no voice)..."
+			<textarea
+				class="plain-textarea"
+				bind:value={value0}
+				placeholder="Type here (no voice)..."
+				inputmode={voice.enabled ? 'none' : undefined}
 			></textarea>
 			<CopyButton value={value0} />
 		</section>
@@ -282,6 +300,10 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.controls + .controls {
 		margin-bottom: 20px;
 		padding-bottom: 12px;
 		border-bottom: 1px solid #eee;

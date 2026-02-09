@@ -10,6 +10,8 @@
 		debug?: boolean;
 		showUtterances?: boolean;
 		showConfidence?: boolean;
+		/** When true, sets inputmode="none" to suppress mobile virtual keyboard. */
+		suppressKeyboard?: boolean;
 	}
 
 	let {
@@ -18,6 +20,7 @@
 		debug = false,
 		showUtterances = false,
 		showConfidence = false,
+		suppressKeyboard = false,
 		oninput,
 		...restProps
 	}: Props = $props();
@@ -441,6 +444,7 @@
 		placeholder=""
 		value={displayValue}
 		oninput={handleInput}
+		inputmode={suppressKeyboard ? 'none' : undefined}
 	></textarea>
 </div>
 

@@ -1,13 +1,16 @@
 /**
  * VoiceInputController — reactive controller for voice input lifecycle.
  *
- * Encapsulates source creation, auto-listen on focus/blur, and toggle UI state.
+ * Encapsulates source creation, manual start/stop, and toggle UI state.
  * Supports multiple transcription sources (Web Speech API, Sherpa-ONNX, etc.).
+ *
+ * Manual mode: toggle() directly starts/stops the source. Listening persists
+ * regardless of focus — no auto-pause on blur. On mobile, textareas use
+ * inputmode="none" while voice is enabled to suppress the virtual keyboard.
  *
  * Usage:
  *   const voice = new VoiceInputController();
- *   <button onclick={voice.toggle}>{voice.enabled ? 'Disable' : 'Enable'}</button>
- *   <div {@attach voice.autoListen}>...</div>
+ *   <button onclick={voice.toggle}>{voice.enabled ? 'Stop' : 'Start'}</button>
  */
 
 import { isErr } from 'wellcrafted/result';
@@ -20,7 +23,6 @@ export type SourceType = 'web-speech' | 'sherpa' | 'deepgram';
 
 export class VoiceInputController {
 	#source: TranscriptionSource | null = $state(null);
-	#container: HTMLElement | null = null;
 
 	enabled = $state(false);
 	sourceType = $state<SourceType>('sherpa');
@@ -81,9 +83,7 @@ export class VoiceInputController {
 			this.#stop();
 		} else {
 			this.enabled = true;
-			// Focus the container's textarea so focusin → #start() fires,
-			// and future focusout pausing works correctly.
-			this.#focusContainer();
+			this.#start();
 		}
 	};
 
@@ -100,55 +100,7 @@ export class VoiceInputController {
 		if (url !== undefined) this.sherpaUrl = url;
 		if (wasEnabled) {
 			this.enabled = true;
-			this.#focusContainer();
+			this.#start();
 		}
 	}
-
-	#focusContainer() {
-		if (!this.#container) return;
-		// Find the textarea inside the container (or the container itself if focusable)
-		const target =
-			this.#container.querySelector<HTMLElement>('textarea, [contenteditable]') ?? this.#container;
-		target.focus();
-	}
-
-	/** Attachment — auto-pauses/resumes listening on focus/blur of container.
-	 *  IMPORTANT: Does not read $state in the body to avoid Svelte re-running
-	 *  the attachment on every enabled/listening change. All reactive reads
-	 *  happen inside event handlers (which don't create reactive dependencies). */
-	autoListen = (node: HTMLElement) => {
-		this.#container = node;
-
-		const handleFocusIn = () => {
-			if (this.enabled) {
-				this.#start();
-			}
-		};
-
-		const handleFocusOut = (e: FocusEvent) => {
-			const goingTo = e.relatedTarget as Node | null;
-			if (!this.enabled) return;
-			if (goingTo && node.contains(goingTo)) return;
-
-			// When relatedTarget is null, focus moved to a non-focusable element
-			// (page background) OR the browser/speech prompt stole focus.
-			// Check if focus actually left the container via activeElement.
-			if (!goingTo) {
-				// If activeElement is still inside the container, focus didn't
-				// really leave (e.g., Chrome speech prompt stole then returned).
-				if (node.contains(document.activeElement)) return;
-			}
-
-			this.#stop();
-		};
-
-		node.addEventListener('focusin', handleFocusIn);
-		node.addEventListener('focusout', handleFocusOut);
-
-		return () => {
-			node.removeEventListener('focusin', handleFocusIn);
-			node.removeEventListener('focusout', handleFocusOut);
-			this.#container = null;
-		};
-	};
 }

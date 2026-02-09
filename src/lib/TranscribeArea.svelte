@@ -70,15 +70,20 @@
 	let insertionStart: number | null = $state(null);
 	let insertionEnd: number | null = $state(null);
 
-	// Schedule cursor restore after Svelte's DOM flush.
-	// Called directly from handlers that know the desired position —
-	// no effect needed, rAF runs after Svelte updates the textarea.
+	// Cursor restore mechanism: transcript handlers set the desired position,
+	// and a $effect applies it after Svelte has flushed displayValue to the DOM.
+	// Using $effect (not tick/rAF) guarantees we run after Svelte's own DOM writes.
+	let cursorRequest: { pos: number; seq: number } | null = $state(null);
+	let cursorSeq = 0;
+
+	$effect(() => {
+		if (cursorRequest != null && textareaEl) {
+			textareaEl.setSelectionRange(cursorRequest.pos, cursorRequest.pos);
+		}
+	});
+
 	function restoreCursor(pos: number) {
-		const el = textareaEl;
-		if (!el) return;
-		requestAnimationFrame(() => {
-			el.setSelectionRange(pos, pos);
-		});
+		cursorRequest = { pos, seq: ++cursorSeq };
 	}
 
 	// After a final for segmentId N, ignore late-arriving interims for
@@ -342,15 +347,44 @@
 		// value). This is acceptable because the interim was a reasonable
 		// approximation of what the speech engine heard. Mark segments as
 		// baked so their finals get rejected (preventing duplicate text).
+		let justBaked = false;
 		if (interims.size > 0) {
+			justBaked = true;
 			interimsBaked = true;
 			interims.clear();
 			insertionStart = null;
 			insertionEnd = null;
 		}
 
-		// Clear utterance ranges — offsets become stale after user edits
-		utteranceRanges = [];
+		// Adjust utterance ranges to account for the user's edit.
+		// When interims were just baked (user typed during voice), ranges
+		// are invalidated — the displayValue included interim text that's
+		// now baked in, so character offsets are meaningless.
+		// Otherwise, shift ranges after the edit point and drop overlapping ones.
+		// NOTE: This heuristic handles insertions, deletions, and backspace
+		// correctly but may misidentify the edit region for select-and-replace.
+		// In that case, overlapping ranges are conservatively dropped.
+		if (justBaked || utteranceRanges.length === 0) {
+			utteranceRanges = [];
+		} else {
+			const delta = rawValue.length - displayValue.length;
+			const cursorAfter = e.currentTarget.selectionStart;
+			// For insertion (delta >= 0): editStart..editStart is the insertion point
+			// For deletion (delta < 0): editStart..editEnd is the deleted range
+			const editStart = delta >= 0 ? cursorAfter - delta : cursorAfter;
+			const editEnd = delta >= 0 ? editStart : editStart - delta;
+
+			utteranceRanges = utteranceRanges
+				.map((r) => {
+					// Range entirely before edit — keep as-is
+					if (r.end <= editStart) return r;
+					// Range entirely after edit — shift by delta
+					if (r.start >= editEnd) return { ...r, start: r.start + delta, end: r.end + delta };
+					// Range overlaps edit — drop it (can't reliably adjust)
+					return null;
+				})
+				.filter((r): r is UtteranceRange => r != null);
+		}
 
 		value = rawValue;
 
@@ -360,56 +394,37 @@
 </script>
 
 <div class="transcribe-area" bind:this={containerEl}>
-	<!-- Preview div: renders text with interim styling -->
+	<!-- Preview div: whitespace between inline elements is eliminated to prevent
+	     collapsed-space misalignment vs the textarea's plain-text rendering.
+	     Svelte preserves template whitespace as text nodes, so all tags/blocks
+	     must be on one continuous line with no gaps. -->
 	<div class="preview" aria-hidden="true">
-		{#if displayValue}
-			{#if showUtterances && utteranceRanges.length > 0}
-				{@const parts = splitByUtterances(beforeCursor, utteranceRanges)}
-				{#each parts as part, i (i)}
-					{#if part.isUtterance}
-						{#if showConfidence && part.words && part.words.length > 0}
-							{#each part.words as word, wi (wi)}
-								<span class="utterance" style:opacity={confidenceToOpacity(word.confidence)}
-									>{word.text}</span
-								>
-							{/each}
-						{:else if showConfidence && part.confidence != null}
-							<span class="utterance" style:opacity={confidenceToOpacity(part.confidence)}
-								>{part.text}</span
-							>
-						{:else}
-							<span class="utterance">{part.text}</span>
-						{/if}
-					{:else}
-						<span class="committed">{part.text}</span>
-					{/if}
-				{/each}
-			{:else}
-				<span class="committed">{beforeCursor}</span>
-			{/if}
-			{#if interimWords.length > 0}
-				<span class="interim-space">{interimSpaceBefore}</span>
-				{#each interimWords as word, wi (wi)}
-					<span
+		{#if displayValue}{#if showUtterances && utteranceRanges.length > 0}{@const parts =
+					splitByUtterances(
+						beforeCursor,
+						utteranceRanges
+					)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}{#each part.words as word, wi (wi)}<span
+									class="utterance"
+									style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
+								>{/each}{:else if showConfidence && part.confidence != null}<span
+								class="utterance"
+								style:opacity={confidenceToOpacity(part.confidence)}>{part.text}</span
+							>{:else}<span class="utterance">{part.text}</span>{/if}{:else}<span class="committed"
+							>{part.text}</span
+						>{/if}{/each}{:else}<span class="committed">{beforeCursor}</span
+				>{/if}{#if interimWords.length > 0}{interimSpaceBefore}{#each interimWords as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
 						class="interim-word"
 						class:stable={interimStable}
 						class:unstable={!interimStable}
 						style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
-					>
-				{/each}
-				<span class="interim-space">{interimSpaceAfter}</span>
-			{:else if interimText}
-				<span
+					>{/each}{interimSpaceAfter}{:else if interimText}<span
 					class="interim"
 					class:stable={interimStable}
 					class:unstable={!interimStable}
 					style:opacity={interimOpacity}>{interimText}</span
-				>
-			{/if}
-			<span class="committed">{afterCursor}</span>
-		{:else}
-			<span class="placeholder">{placeholder}</span>
-		{/if}
+				>{/if}<span class="committed">{afterCursor}</span>{:else}<span class="placeholder"
+				>{placeholder}</span
+			>{/if}
 	</div>
 
 	<!-- Textarea: transparent text, visible caret, handles all input -->
@@ -470,14 +485,30 @@
 		font-family: 'Courier New', Courier, monospace;
 		font-size: 14px;
 		line-height: 1.5;
+		font-synthesis: none;
 	}
 
 	.preview,
 	.input {
-		/* Must match exactly for character alignment */
+		/* Must match exactly for character alignment.
+		   Browsers render <textarea> and <div> with subtly different defaults
+		   for font metrics, kerning, spacing, etc. Explicitly resetting all
+		   text-layout properties ensures identical character positioning.
+		   See: https://github.com/panphora/overtype (same technique) */
 		font-family: inherit;
 		font-size: inherit;
 		line-height: inherit;
+		font-weight: normal;
+		font-style: normal;
+		font-variant: normal;
+		font-stretch: normal;
+		font-kerning: none;
+		font-feature-settings: normal;
+		font-variant-ligatures: none;
+		letter-spacing: normal;
+		word-spacing: normal;
+		text-rendering: auto;
+		-webkit-text-size-adjust: 100%;
 		padding: 8px;
 		margin: 0;
 		border: 1px solid #ccc;
@@ -488,6 +519,9 @@
 		white-space: pre-wrap;
 		word-wrap: break-word;
 		overflow-wrap: break-word;
+		tab-size: 4;
+		-moz-tab-size: 4;
+		text-indent: 0;
 		resize: vertical;
 	}
 
@@ -528,7 +562,10 @@
 		text-decoration-style: solid;
 	}
 
-	/* Interim text (no per-word data) */
+	/* Interim text (no per-word data)
+	   Stable = dotted underline (text won't change, not yet committed)
+	   Unstable = dotted underline + italic + lighter color (text may still change)
+	   font-synthesis:none on .transcribe-area prevents faux-italic width drift. */
 	.interim {
 		text-decoration: underline;
 		text-decoration-color: #bbb;
@@ -557,8 +594,6 @@
 		text-decoration-style: dotted;
 		font-style: italic;
 	}
-
-	/* .interim-space — spacing spans need no special styling, just hold whitespace */
 
 	.placeholder {
 		color: #999;

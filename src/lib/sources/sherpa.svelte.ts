@@ -5,8 +5,15 @@
  * mic audio via AudioWorklet, streams 16kHz Float32 binary frames, and maps
  * server JSON responses to the Transcript type.
  *
- * C++ server JSON: { text, tokens, timestamps, segment, start_time, is_final, is_eof }
+ * C++ server JSON: { text, tokens, timestamps, ys_probs, lm_probs, context_scores,
+ *                     segment, start_time, is_final, is_eof }
  * Python server JSON: { text, segment } (no is_final — detect by segment increment)
+ *
+ * Finality semantics:
+ *   Sherpa's is_final means "endpoint detected" (silence/pause), NOT "text might change."
+ *   Sherpa interims are append-only — earlier tokens are never revised, regardless of
+ *   model (Zipformer, Nemotron, etc.). So all sherpa results set isFinal: true (text is
+ *   stable) and only set isEndpoint: true when the server signals is_final (utterance done).
  */
 
 import { Ok } from 'wellcrafted/result';
@@ -26,6 +33,9 @@ interface SherpaServerMessage {
 	is_eof?: boolean;
 	tokens?: string[];
 	timestamps?: number[];
+	ys_probs?: number[]; // per-token ASR model log-probs
+	lm_probs?: number[]; // per-token language model log-probs
+	context_scores?: number[]; // per-token hotword/context boosting log-probs
 	start_time?: number;
 	words?: unknown[];
 }
@@ -221,21 +231,20 @@ export class SherpaSource implements TranscriptionSource {
 		const hasFinalField = 'is_final' in msg;
 
 		if (hasFinalField) {
-			// C++ server: has explicit is_final.
+			// C++ server: has explicit is_final (= endpoint detected).
 			// Use monotonic segmentIds so TranscribeArea's
 			// committedThroughSegment rejection works correctly.
 			// Sherpa reuses server segment IDs after empty finals,
 			// so map them to our own counter.
-			if (msg.is_final) {
-				this.emitTranscript(text, this.nextSegmentId, true, msg);
+			const isEndpoint = !!msg.is_final;
+			this.emitTranscript(text, this.nextSegmentId, isEndpoint, msg);
+			if (isEndpoint) {
 				this.nextSegmentId++;
-			} else {
-				this.emitTranscript(text, this.nextSegmentId, false, msg);
 			}
 		} else {
-			// Python server: detect finality by segment increment
+			// Python server: detect endpoint by segment increment
 			if (this.currentSegment >= 0 && segment > this.currentSegment) {
-				// New segment started — finalize the previous one
+				// New segment started — endpoint for the previous one
 				const prevText = this.lastTextBySegment.get(this.currentSegment) ?? '';
 				if (prevText) {
 					this.emitTranscript(prevText, this.nextSegmentId, true, msg);
@@ -243,7 +252,7 @@ export class SherpaSource implements TranscriptionSource {
 				}
 			}
 
-			// Emit current as interim
+			// Emit current (not an endpoint yet)
 			this.lastTextBySegment.set(segment, text);
 			this.currentSegment = segment;
 			this.emitTranscript(text, this.nextSegmentId, false, msg);
@@ -253,29 +262,41 @@ export class SherpaSource implements TranscriptionSource {
 	private emitTranscript(
 		text: string,
 		segment: number,
-		isFinal: boolean,
+		isEndpoint: boolean,
 		raw: SherpaServerMessage
 	) {
 		if (!this.onResult) return;
 
 		// Build word-level detail from tokens + timestamps (C++ server)
+		// Include per-token confidence from log-probs when available.
 		let words: Word[] | undefined;
 		if (raw.tokens && raw.timestamps && raw.tokens.length === raw.timestamps.length) {
 			const startTime = raw.start_time ?? 0;
-			words = raw.tokens.map((token, i) => ({
-				text: token,
-				start: startTime + raw.timestamps![i],
-				end:
-					i + 1 < raw.timestamps!.length
-						? startTime + raw.timestamps![i + 1]
-						: startTime + raw.timestamps![i] + 0.1 // estimate
-			}));
+			words = raw.tokens.map((token, i) => {
+				// Combined confidence from ASR model + LM + context scores (all log-domain).
+				// Missing arrays default to 0 contribution. exp() converts to 0.0–1.0.
+				const logProb =
+					(raw.ys_probs?.[i] ?? 0) + (raw.lm_probs?.[i] ?? 0) + (raw.context_scores?.[i] ?? 0);
+				// Only set confidence if we had actual prob data
+				const hasProbs = raw.ys_probs != null || raw.lm_probs != null;
+				return {
+					text: token,
+					start: startTime + raw.timestamps![i],
+					end:
+						i + 1 < raw.timestamps!.length
+							? startTime + raw.timestamps![i + 1]
+							: startTime + raw.timestamps![i] + 0.1, // estimate
+					...(hasProbs ? { confidence: Math.exp(logProb) } : {})
+				};
+			});
 		}
 
+		// Sherpa interims are append-only — earlier tokens never change.
+		// isFinal: true always (text is stable), isEndpoint only on silence detection.
 		const transcript: Transcript = {
 			text,
-			isFinal,
-			isEndpoint: isFinal,
+			isFinal: true,
+			isEndpoint,
 			segmentId: segment,
 			start: raw.start_time,
 			words,

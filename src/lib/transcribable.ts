@@ -2,15 +2,15 @@
  * transcribable — Svelte attachment that makes any <textarea> receive voice input.
  *
  * Listens for 'rift:transcript' CustomEvents on document. When the textarea
- * is focused and a final transcript arrives, inserts text at the cursor
+ * is focused and an endpoint transcript arrives, inserts text at the cursor
  * using execCommand('insertText') — which:
  *   - Updates the textarea's value
  *   - Fires a native 'input' event
  *   - Creates an undo stack entry
  *   - Respects the current selection (replaces it)
  *
- * Interim transcripts are ignored — plain textareas can't style inline ranges.
- * For interim display, use TranscribeArea instead.
+ * Non-endpoint transcripts are ignored — plain textareas can't style inline
+ * ranges. For interim/stability display, use TranscribeArea instead.
  *
  * Usage:
  *   <textarea {@attach transcribable} bind:value />
@@ -23,8 +23,8 @@ export function transcribable(node: HTMLTextAreaElement) {
 	function handleTranscriptEvent(e: Event) {
 		const transcript = (e as TranscriptEvent).detail;
 
-		// Only handle finals — plain textareas can't show interims
-		if (!transcript.isFinal) return;
+		// Only handle endpoints — plain textareas can't show interims/stability
+		if (!transcript.isEndpoint) return;
 
 		// Only act when this textarea is focused
 		if (document.activeElement !== node) return;

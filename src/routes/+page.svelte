@@ -12,6 +12,8 @@
 	let value0 = $state('');
 	let value1 = $state('');
 	let value2 = $state('');
+	let showUtterances = $state(false);
+	let showConfidence = $state(false);
 
 	// Persist Deepgram API key in localStorage
 	const DG_KEY = 'deepgram-api-key';
@@ -87,8 +89,27 @@
 
 		<section class="level">
 			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
-			<p class="level-desc">Full experience. Interim text shown inline with dotted underline.</p>
-			<TranscribeArea bind:value={value2} placeholder="Type or speak (with interims)..." debug />
+			<p class="level-desc">
+				Full experience. 3-axis rendering: underline (uncommitted), italic (unstable), opacity
+				(confidence).
+			</p>
+			<div class="level-toggles">
+				<label>
+					<input type="checkbox" bind:checked={showUtterances} />
+					Show utterance boundaries
+				</label>
+				<label>
+					<input type="checkbox" bind:checked={showConfidence} />
+					Show confidence
+				</label>
+			</div>
+			<TranscribeArea
+				bind:value={value2}
+				placeholder="Type or speak (with interims)..."
+				{showUtterances}
+				{showConfidence}
+				debug
+			/>
 			<CopyButton value={value2} />
 		</section>
 
@@ -164,6 +185,21 @@
 		color: #888;
 		font-size: 13px;
 		margin: 0 0 6px;
+	}
+
+	.level-toggles {
+		display: flex;
+		gap: 16px;
+		margin-bottom: 6px;
+		font-size: 13px;
+		color: #555;
+	}
+
+	.level-toggles label {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		cursor: pointer;
 	}
 
 	.plain-textarea {

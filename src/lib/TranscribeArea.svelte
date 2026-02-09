@@ -1,19 +1,23 @@
 <script lang="ts">
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { HTMLTextareaAttributes } from 'svelte/elements';
-	import type { Transcript, TranscriptEvent } from '$lib/types.js';
+	import type { Transcript, TranscriptEvent, Word } from '$lib/types.js';
 	import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
 
 	interface Props extends HTMLTextareaAttributes {
 		value?: string;
 		placeholder?: string;
 		debug?: boolean;
+		showUtterances?: boolean;
+		showConfidence?: boolean;
 	}
 
 	let {
 		value = $bindable(''),
 		placeholder = 'Type or speak...',
 		debug = false,
+		showUtterances = false,
+		showConfidence = false,
 		oninput,
 		...restProps
 	}: Props = $props();
@@ -44,11 +48,21 @@
 		].slice(0, 100);
 	}
 
+	type InterimSegment = {
+		text: string;
+		isFinal: boolean;
+		confidence?: number;
+		words?: Word[];
+	};
+
+	type UtteranceRange = { start: number; end: number; confidence?: number; words?: Word[] };
+	let utteranceRanges: UtteranceRange[] = $state([]);
+
 	// Track interims per segmentId — Web Speech fires interleaved results for
 	// multiple segments simultaneously (e.g., seg=2 and seg=3 alternating).
 	// Using SvelteMap for reactive .set()/.delete()/.clear() — but must use
 	// .clear() not reassignment, since the variable isn't $state.
-	const interims = new SvelteMap<number, string>();
+	const interims = new SvelteMap<number, InterimSegment>();
 
 	// Insertion range: where voice text replaces in committed value.
 	// Captured from selection on first interim; stays fixed until final commits.
@@ -78,7 +92,37 @@
 	// means the engine has finished processing the baked audio).
 	let interimsBaked = $state(false);
 
-	let rawInterimText: string = $derived(Array.from(interims.values()).join('').trim());
+	let rawInterimText: string = $derived(
+		Array.from(interims.values())
+			.map((s) => s.text)
+			.join('')
+			.trim()
+	);
+
+	// Map confidence (0.0–1.0) to a visible opacity range (0.4–1.0).
+	// Raw confidence can be very low (e.g., 0.01 from Web Speech interims),
+	// which would make text invisible if used directly as opacity.
+	function confidenceToOpacity(confidence: number | undefined): number {
+		if (confidence == null) return 1;
+		const MIN_OPACITY = 0.4;
+		return MIN_OPACITY + confidence * (1 - MIN_OPACITY);
+	}
+
+	// All interim segments are stable if every segment has isFinal: true
+	let interimStable: boolean = $derived(
+		interims.size === 0 || Array.from(interims.values()).every((s) => s.isFinal)
+	);
+
+	// Aggregate confidence across interim segments (average), mapped to opacity range
+	let interimOpacity: number = $derived.by(() => {
+		const segs = Array.from(interims.values()).filter((s) => s.confidence != null);
+		if (segs.length === 0) return 1;
+		const avgConf = segs.reduce((sum, s) => sum + s.confidence!, 0) / segs.length;
+		return confidenceToOpacity(avgConf);
+	});
+
+	// Collect all words across interim segments for per-word rendering
+	let interimWords: Word[] = $derived(Array.from(interims.values()).flatMap((s) => s.words ?? []));
 
 	// Split committed text around insertion range for preview rendering.
 	// Selected text is excluded — replaced by interim.
@@ -98,6 +142,32 @@
 
 	// Textarea shows: text before cursor + interim + text after cursor
 	let displayValue: string = $derived(beforeCursor + interimText + afterCursor);
+
+	// --- Helper for utterance splitting ---
+
+	type TextPart = { text: string; isUtterance: boolean; confidence?: number; words?: Word[] };
+
+	function splitByUtterances(text: string, ranges: UtteranceRange[]): TextPart[] {
+		if (ranges.length === 0) return [{ text, isUtterance: false }];
+		const parts: TextPart[] = [];
+		let pos = 0;
+		for (const range of ranges) {
+			if (range.start > pos) {
+				parts.push({ text: text.slice(pos, range.start), isUtterance: false });
+			}
+			parts.push({
+				text: text.slice(range.start, range.end),
+				isUtterance: true,
+				confidence: range.confidence,
+				words: range.words
+			});
+			pos = range.end;
+		}
+		if (pos < text.length) {
+			parts.push({ text: text.slice(pos), isUtterance: false });
+		}
+		return parts;
+	}
 
 	// --- Listen for transcript events on document ---
 
@@ -133,6 +203,7 @@
 	function handleTranscript(transcript: Transcript): void {
 		debugPush('transcript', {
 			isFinal: transcript.isFinal,
+			isEndpoint: transcript.isEndpoint,
 			seg: transcript.segmentId,
 			text: transcript.text,
 			valueLen: value.length,
@@ -141,7 +212,7 @@
 			insEnd: insertionEnd
 		});
 
-		if (transcript.isFinal) {
+		if (transcript.isEndpoint) {
 			// Reject finals for speech that was already baked into value
 			// by keyboard input during interims — prevents duplicate text.
 			// The final signals the engine is done with that utterance,
@@ -182,6 +253,19 @@
 			const spaceBefore = needsSpaceBefore(before) ? ' ' : '';
 			const spaceAfter = needsSpaceAfter(after) ? ' ' : '';
 
+			// Track utterance range for showUtterances rendering
+			const insertedStart = before.length + spaceBefore.length;
+			const insertedEnd = insertedStart + text.length;
+			utteranceRanges = [
+				...utteranceRanges,
+				{
+					start: insertedStart,
+					end: insertedEnd,
+					confidence: transcript.confidence,
+					words: transcript.words
+				}
+			];
+
 			value = before + spaceBefore + text + spaceAfter + after;
 
 			// Place cursor right after the inserted text
@@ -212,13 +296,21 @@
 				insertionEnd = textareaEl?.selectionEnd ?? insertionStart;
 			}
 
-			interims.set(transcript.segmentId, transcript.text);
+			interims.set(transcript.segmentId, {
+				text: transcript.text,
+				isFinal: transcript.isFinal,
+				confidence: transcript.confidence,
+				words: transcript.words
+			});
 
 			// Keep cursor at end of interim preview (before afterCursor text)
 			// so caret visually sits at the voice insertion point.
 			const before = insertionStart != null ? value.slice(0, insertionStart) : value;
 			// Compute interim text inline to get the length after spacing
-			const raw = Array.from(interims.values()).join('').trim();
+			const raw = Array.from(interims.values())
+				.map((s) => s.text)
+				.join('')
+				.trim();
 			const sBefore = raw && needsSpaceBefore(before) ? ' ' : '';
 			const after = insertionEnd != null ? value.slice(insertionEnd) : '';
 			const sAfter = raw && needsSpaceAfter(after) ? ' ' : '';
@@ -257,6 +349,9 @@
 			insertionEnd = null;
 		}
 
+		// Clear utterance ranges — offsets become stale after user edits
+		utteranceRanges = [];
+
 		value = rawValue;
 
 		// Forward to consumer's oninput handler
@@ -268,9 +363,50 @@
 	<!-- Preview div: renders text with interim styling -->
 	<div class="preview" aria-hidden="true">
 		{#if displayValue}
-			<span class="committed">{beforeCursor}</span><span class="interim">{interimText}</span><span
-				class="committed">{afterCursor}</span
-			>
+			{#if showUtterances && utteranceRanges.length > 0}
+				{@const parts = splitByUtterances(beforeCursor, utteranceRanges)}
+				{#each parts as part, i (i)}
+					{#if part.isUtterance}
+						{#if showConfidence && part.words && part.words.length > 0}
+							{#each part.words as word, wi (wi)}
+								<span class="utterance" style:opacity={confidenceToOpacity(word.confidence)}
+									>{word.text}</span
+								>
+							{/each}
+						{:else if showConfidence && part.confidence != null}
+							<span class="utterance" style:opacity={confidenceToOpacity(part.confidence)}
+								>{part.text}</span
+							>
+						{:else}
+							<span class="utterance">{part.text}</span>
+						{/if}
+					{:else}
+						<span class="committed">{part.text}</span>
+					{/if}
+				{/each}
+			{:else}
+				<span class="committed">{beforeCursor}</span>
+			{/if}
+			{#if interimWords.length > 0}
+				<span class="interim-space">{interimSpaceBefore}</span>
+				{#each interimWords as word, wi (wi)}
+					<span
+						class="interim-word"
+						class:stable={interimStable}
+						class:unstable={!interimStable}
+						style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
+					>
+				{/each}
+				<span class="interim-space">{interimSpaceAfter}</span>
+			{:else if interimText}
+				<span
+					class="interim"
+					class:stable={interimStable}
+					class:unstable={!interimStable}
+					style:opacity={interimOpacity}>{interimText}</span
+				>
+			{/if}
+			<span class="committed">{afterCursor}</span>
 		{:else}
 			<span class="placeholder">{placeholder}</span>
 		{/if}
@@ -297,12 +433,18 @@
 			<span><b>ins:</b> {insertionStart ?? '-'}..{insertionEnd ?? '-'}</span>
 			<span><b>baked:</b> {interimsBaked}</span>
 			<span><b>committed≤:</b> {committedThroughSegment}</span>
+			<span><b>stable:</b> {interimStable}</span>
+			<span><b>opacity:</b> {interimOpacity.toFixed(2)}</span>
+			<span><b>utterances:</b> {utteranceRanges.length}</span>
 		</div>
 		{#if interims.size > 0}
 			<div class="ta-debug-interims">
 				<b>Interim map:</b>
-				{#each [...interims.entries()] as [seg, text] (seg)}
-					<span class="ta-debug-interim">seg={seg}: "{text}"</span>
+				{#each [...interims.entries()] as [seg, data] (seg)}
+					<span class="ta-debug-interim"
+						>seg={seg}: "{data.text}" final={data.isFinal} conf={data.confidence?.toFixed(2) ??
+							'-'}</span
+					>
 				{/each}
 			</div>
 		{/if}
@@ -378,12 +520,45 @@
 		color: #1a1a1a;
 	}
 
+	/* Committed voice-input text — solid underline to show utterance boundaries */
+	.utterance {
+		color: #1a1a1a;
+		text-decoration: underline;
+		text-decoration-color: #ccc;
+		text-decoration-style: solid;
+	}
+
+	/* Interim text (no per-word data) */
 	.interim {
-		color: #888;
 		text-decoration: underline;
 		text-decoration-color: #bbb;
+	}
+	.interim.stable {
+		color: #1a1a1a;
 		text-decoration-style: dotted;
 	}
+	.interim.unstable {
+		color: #888;
+		text-decoration-style: dotted;
+		font-style: italic;
+	}
+
+	/* Per-word interim rendering */
+	.interim-word {
+		text-decoration: underline;
+		text-decoration-color: #bbb;
+	}
+	.interim-word.stable {
+		color: #1a1a1a;
+		text-decoration-style: dotted;
+	}
+	.interim-word.unstable {
+		color: #888;
+		text-decoration-style: dotted;
+		font-style: italic;
+	}
+
+	/* .interim-space — spacing spans need no special styling, just hold whitespace */
 
 	.placeholder {
 		color: #999;

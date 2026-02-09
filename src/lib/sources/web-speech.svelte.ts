@@ -201,6 +201,15 @@ export class WebSpeechSource implements TranscriptionSource {
 
 			if (!this.onResult) return;
 
+			// Collect all interim text parts and emit as one combined interim.
+			// Chrome fires multiple result indices per onresult — some are the
+			// confident partial (90%) and others are speculative extensions (1%).
+			// Emitting them separately with the same segmentId causes the last
+			// one to overwrite the first in the interims map, losing text.
+			let combinedInterimText = '';
+			let bestInterimConfidence = 0;
+			let hasInterim = false;
+
 			for (let i = event.resultIndex; i < event.results.length; i++) {
 				// Skip indices we've already finalized — Android re-delivers
 				// the entire results array on every onresult (resultIndex=0).
@@ -246,21 +255,38 @@ export class WebSpeechSource implements TranscriptionSource {
 					}
 					this.finalizedResultIndices.add(i);
 					this.lastCommittedText = alt.transcript;
-				}
 
-				const segmentId = this.nextSegmentId;
-				if (isFinal) {
+					const segmentId = this.nextSegmentId;
 					this.nextSegmentId++;
+
+					const transcript: Transcript = {
+						text,
+						isFinal: true,
+						isEndpoint: true,
+						segmentId,
+						confidence: alt.confidence > 0 ? alt.confidence : undefined
+					};
+
+					this.onResult(transcript);
+				} else {
+					// Accumulate interims — will emit as one combined result after loop
+					combinedInterimText += text;
+					if (alt.confidence > bestInterimConfidence) {
+						bestInterimConfidence = alt.confidence;
+					}
+					hasInterim = true;
 				}
+			}
 
+			// Emit combined interim as a single transcript
+			if (hasInterim) {
 				const transcript: Transcript = {
-					text,
-					isFinal,
-					isEndpoint: isFinal,
-					segmentId,
-					confidence: alt.confidence > 0 ? alt.confidence : undefined
+					text: combinedInterimText,
+					isFinal: false,
+					isEndpoint: false,
+					segmentId: this.nextSegmentId,
+					confidence: bestInterimConfidence > 0 ? bestInterimConfidence : undefined
 				};
-
 				this.onResult(transcript);
 			}
 		};

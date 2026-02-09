@@ -104,8 +104,10 @@
 	// which would make text invisible if used directly as opacity.
 	function confidenceToOpacity(confidence: number | undefined): number {
 		if (confidence == null) return 1;
-		const MIN_OPACITY = 0.4;
-		return MIN_OPACITY + confidence * (1 - MIN_OPACITY);
+		const MIN_OPACITY = 0.2;
+		// Power curve: spreads out the 0.7–1.0 range where most ASR
+		// confidences cluster, making differences more perceptible.
+		return MIN_OPACITY + confidence ** 3 * (1 - MIN_OPACITY);
 	}
 
 	// All interim segments are stable if every segment has isFinal: true
@@ -414,10 +416,13 @@
 					splitByUtterances(
 						beforeCursor,
 						utteranceRanges
-					)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}{#each part.words as word, wi (wi)}<span
-									class="utterance"
-									style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
-								>{/each}{:else if showConfidence && part.confidence != null}<span
+					)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}<span
+								class="utterance"
+								>{#each part.words as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
+										class="confidence-word"
+										style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
+									>{/each}</span
+							>{:else if showConfidence && part.confidence != null}<span
 								class="utterance"
 								style:opacity={confidenceToOpacity(part.confidence)}>{part.text}</span
 							>{:else}<span class="utterance">{part.text}</span>{/if}{:else}<span class="committed"
@@ -571,6 +576,12 @@
 		text-decoration: underline;
 		text-decoration-color: #ccc;
 		text-decoration-style: solid;
+	}
+
+	/* Per-word confidence inside an utterance — opacity varies, underline
+	   comes from the parent .utterance span to stay continuous. */
+	.confidence-word {
+		color: inherit;
 	}
 
 	/* Interim text (no per-word data)

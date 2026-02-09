@@ -299,23 +299,24 @@
 	.controls {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 8px;
 		flex-wrap: wrap;
+		margin-bottom: 8px;
 	}
 
-	.controls + .controls {
+	.controls:last-of-type {
 		margin-bottom: 20px;
 		padding-bottom: 12px;
 		border-bottom: 1px solid #eee;
 	}
 
 	button {
-		padding: 8px 16px;
+		padding: 6px 12px;
 		border: 1px solid #ccc;
 		border-radius: 4px;
 		background: #f5f5f5;
 		cursor: pointer;
-		font-size: 14px;
+		font-size: 13px;
 	}
 
 	button:hover {

@@ -5,7 +5,7 @@ Text transforms process transcription output before display, clipboard, or expor
 ## Design Principles
 
 - **Most users never write code.** The primary interface is a GUI table with editable fields. The underlying script format is an implementation detail.
-- **One model, not two.** Everything is a transform script that exports rules. Simple rules are data. Complex rules are functions. The runner doesn't distinguish — a rule is a match pattern and a replacement (string, function, or object).
+- **One model, three tools.** Everything is a transform script. Scripts can export `rules` (match → replace pairs), `words` (preferred spellings with fuzzy matching), and/or `transform()` (full-text functions). These three tools cover the spectrum from static data to arbitrary logic. The runner executes them in that order within each script.
 - **Metadata preservation is a runner concern, not a user concern.** Users write rules against text. The runner handles timestamp/confidence alignment internally, with quality proportional to rule complexity.
 - **Rules are ordered.** Insertion order determines execution order. Earlier rules run first.
 
@@ -13,14 +13,15 @@ Text transforms process transcription output before display, clipboard, or expor
 
 ## Transform Scripts
 
-A transform script is a TypeScript (or Civet) module that exports `rules` and/or `transform`, plus optional `meta`/`settings`. This is the single format for everything — from a GUI-generated punctuation table to a vibe-coded NLP pipeline.
+A transform script is a TypeScript (or Civet) module that exports `rules`, `words`, and/or `transform`, plus optional `meta`/`settings`. This is the single format for everything — from a GUI-generated punctuation table to a vibe-coded NLP pipeline.
 
-A script can export either or both:
+A script can export any combination of:
 
 - **`rules`** — an object of match → replace pairs. For pattern-based transforms (spoken punctuation, filler removal, text expansion).
+- **`words`** — an object of preferred spellings with fuzzy n-gram matching. For vocabulary correction where the user knows the correct spelling but not what the STT will produce (proper nouns, compound words, acronyms).
 - **`transform(text, config?)`** — a function that receives the full text. For operations that don't fit the match/replace model (case conversion, whitespace normalization, deduplication).
 
-When both are present, `rules` run first, then `transform` receives the result.
+When multiple are present, they run in order: `rules` first (exact pattern matching), then `words` (fuzzy vocabulary correction), then `transform()` (arbitrary logic). Each stage receives the output of the previous.
 
 ### Basic Example
 
@@ -145,6 +146,76 @@ export const rules = {
 };
 ```
 
+### Preferred Words
+
+STT engines tokenize audio independently — compound words and proper nouns get split unpredictably. "ChatGPT" becomes "Chat G P T", "ChargeBee" becomes "Charge Bee." Users know the correct spelling but not what their STT will produce, so replacement pairs (`"Chat G P T": "ChatGPT"`) don't work — the input varies by provider, model, and audio quality.
+
+The `words` export is a vocabulary of preferred spellings. The runner scans the text with a sliding window, concatenates consecutive tokens, and fuzzy-matches against the vocabulary to find and correct split compounds.
+
+```typescript
+// custom-vocabulary.transform.ts
+
+export const meta = {
+	name: 'Custom Vocabulary',
+	description: 'Fix proper nouns and compound words split by STT'
+};
+
+export const words = {
+	// String value = match level (exact shape TBD)
+	ChatGPT: 'exact',
+	'MacBook Pro': 'close',
+	Kubernetes: 'loose',
+	Svelte: 'close',
+	API: 'exact',
+
+	// Object value = per-word overrides
+	résumé: { match: 'exact', caseSensitive: true },
+	'Dr. Smith': { match: 'loose', window: 4 }
+};
+```
+
+Like `rules`, the value is either a simple type (match level string) or an object with options. The key is always the preferred spelling — what the output should be.
+
+**How matching works:**
+
+1. The runner pre-computes each vocabulary word with spaces removed and lowercased ("ChargeBee" → "chargebee")
+2. At each position in the input, a sliding window tries N-word groups (longest first, greedy)
+3. Tokens in the window are concatenated (strip punctuation, lowercase): `["Charge", "B"]` → `"chargeb"`
+4. The concatenation is compared against the vocabulary using the word's match level
+5. On match, the entire window is replaced with the preferred spelling, preserving the input's case pattern
+
+| Input           | Vocabulary            | Result         | Mechanism                                           |
+| --------------- | --------------------- | -------------- | --------------------------------------------------- |
+| `"Chat G P T"`  | `ChatGPT: 'exact'`    | `"ChatGPT"`    | 4-gram: `"chatgpt"` = `"chatgpt"`                   |
+| `"Charge B"`    | `ChargeBee: 'close'`  | `"ChargeBee"`  | 2-gram: `"chargeb"` ≈ `"chargebee"` (Levenshtein)   |
+| `"Kubernetees"` | `Kubernetes: 'loose'` | `"Kubernetes"` | 1-gram: phonetic + Levenshtein                      |
+| `"CHARGE B"`    | `ChargeBee: 'close'`  | `"CHARGEBEE"`  | Case preservation: ALL-CAPS input → ALL-CAPS output |
+
+**Match levels** (exact names/semantics TBD):
+
+| Level     | Behavior                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `'exact'` | Concatenate tokens and compare literally. Zero tolerance. Good for acronyms and short words where fuzziness would cause false positives. |
+| `'close'` | Levenshtein edit distance. Catches minor STT variations and typos.                                                                       |
+| `'loose'` | Levenshtein + phonetic (Soundex) boost. Catches pronunciation-based STT errors.                                                          |
+
+These are points on a strictness scale, not orthogonal strategies — `'loose'` includes Levenshtein, which includes exact comparison. A numeric threshold may replace or supplement the named levels.
+
+**Per-word options** (when the value is an object):
+
+| Option          | Default                  | Description                                                                |
+| --------------- | ------------------------ | -------------------------------------------------------------------------- |
+| `match`         | Script-level default     | Match level: `'exact'`, `'close'`, `'loose'`, or numeric threshold         |
+| `window`        | Derived from word length | Max tokens to consider. Default: `ceil(word.replace(/\s/g,'').length / 2)` |
+| `threshold`     | Derived from match level | Explicit fuzzy threshold (0.0–1.0). Overrides match level.                 |
+| `caseSensitive` | `false`                  | Require case match (rare — most STT output has inconsistent case)          |
+
+**Window size derivation:** For a bare entry like `'ChatGPT': 'exact'`, the runner derives the max window from the word's character count. "ChatGPT" (7 chars) needs at most a 4-token window ("Chat G P T"). Users never think about window size unless the heuristic is wrong for a specific word.
+
+**Script-level defaults** can be set via `settings`, so users who want all-exact or all-loose set it once and only annotate exceptions.
+
+**Prior art:** Handy's custom words (PR #711) implements this algorithm with a fixed 3-token window and Levenshtein + Soundex matching. RIFT improves on it with per-word configuration and derived window sizes.
+
 ### Full-Text Transform
 
 Some operations don't match specific words — they transform the entire text. These use the `transform` export:
@@ -180,7 +251,7 @@ export function transform(text: string, config): string {
 }
 ```
 
-A script can also combine both — rules for pattern matching, then `transform` for cleanup:
+A script can combine all three — rules for pattern matching, words for vocabulary, then `transform` for cleanup:
 
 ```typescript
 // full-cleanup.transform.ts
@@ -191,7 +262,12 @@ export const rules = {
 	um: ''
 };
 
-// Runs after rules: normalize whitespace
+export const words = {
+	ChatGPT: 'exact',
+	RIFT: 'exact'
+};
+
+// Runs after rules and words: normalize whitespace
 export function transform(text: string): string {
 	return text.replace(/ {2,}/g, ' ').trim();
 }
@@ -235,6 +311,8 @@ The rule key (or `regexp` option) supports four match syntaxes. The runner auto-
 Matches the exact word or phrase, case-insensitive by default. `"comma"` matches "comma", "Comma", and "COMMA". Multi-word keys match across token boundaries. Works in any language.
 
 Case-insensitive default is deliberate: transcription providers are inconsistent about case (some return ALL CAPS, some lowercase, some mixed), and spoken words have no inherent case. Opt in to case-sensitive matching with `{ caseSensitive: true }` when needed.
+
+**Note:** Literal matching handles phrases where the user knows the exact input text ("question mark" → "?"). It does _not_ handle compound words split unpredictably by STT (e.g., "Chat G P T" when the user wants "ChatGPT") — that's what the `words` export is for. Don't put `"ChatGPT": "ChatGPT"` in `rules`; put `'ChatGPT': 'exact'` in `words`.
 
 ### 2. Regex
 
@@ -296,7 +374,7 @@ Provider tags work across all languages because they use transcription metadata,
 
 ## GUI Mapping
 
-The rules object renders directly as a table:
+The `rules` object renders as a two-column table:
 
 | Match         | Replace/Action | Enabled |
 | ------------- | -------------- | ------- |
@@ -314,7 +392,20 @@ The rules object renders directly as a table:
 - Object values show the `replace` or `action` field
 - Advanced options (`regexp`, `word`, `propagateCase`) are collapsed by default
 
-Users add/remove/reorder rows in the GUI. The GUI serializes to/from the script format. For purely declarative rule sets (all string values), JSONC is sufficient — no TS compilation needed.
+The `words` object renders as a simpler single-column list with expandable settings:
+
+| Preferred Spelling | Settings                | Enabled |
+| ------------------ | ----------------------- | ------- |
+| ChatGPT            | exact                   | ✓       |
+| MacBook Pro        | close                   | ✓       |
+| Kubernetes         | loose                   | ✓       |
+| résumé             | ⚙ exact, case-sensitive | ✓       |
+
+- String values show the match level
+- Object values show a summary; clicking expands to show all overrides
+- The ⚙ indicator flags non-default settings
+
+Users add/remove/reorder rows in the GUI. The GUI serializes to/from the script format. For purely declarative scripts (all string values in `rules` and `words`), JSONC is sufficient — no TS compilation needed.
 
 ### UI Layers
 
@@ -322,9 +413,9 @@ The GUI has three levels of depth:
 
 1. **Profile selector + script toggles** — a dropdown to pick the active profile (Casual, Medical, Programming, etc.) and a list of transform scripts with on/off toggles. Most users stop here.
 
-2. **Rules within a script** — click a script's settings icon to see its rules, grouped by category (comment headers in JSONC). Categories are collapsible. Per-rule checkboxes toggle individual rules within the active profile.
+2. **Rules and words within a script** — click a script's settings icon to see its rules and/or words, grouped by category (comment headers in JSONC). Categories are collapsible. Per-entry checkboxes toggle individual rules or words within the active profile.
 
-3. **Rule editor** — expand a rule to see/edit advanced options or add custom rules (two fields: match and replace).
+3. **Entry editor** — expand a rule to see/edit advanced options or add custom entries. Rules have two fields (match and replace). Words have one field (preferred spelling) with optional match settings.
 
 For large presets (50+ rules), categories start collapsed except the most-edited ones. Search/filter across all rules.
 
@@ -345,13 +436,15 @@ Users install presets, then customize individual rules (enable/disable, modify).
 
 ## Pipeline
 
-Transform scripts run in sequence. Within each script, `rules` run first, then `transform`:
+Transform scripts run in sequence. Within each script, the three exports run in order — `rules` (pattern matching), then `words` (fuzzy vocabulary correction), then `transform()` (full-text logic):
 
 ```
-[transcription] → [script 1 rules → script 1 transform]
-               → [script 2 rules → script 2 transform]
+[transcription] → [script 1 rules → words → transform]
+               → [script 2 rules → words → transform]
                → ... → [output]
 ```
+
+This order reflects increasing fuzziness: exact pattern matches first, then fuzzy vocabulary correction on the cleaned text, then arbitrary logic on the best possible input.
 
 ### When Transforms Run
 
@@ -408,6 +501,7 @@ Transforms do **not** modify the stored transcription data — they produce a tr
 ### Performance
 
 - **String rules** are compiled into an optimized matcher when rules change, not per invocation
+- **Preferred words** are pre-indexed (spaces removed, lowercased) when the word list changes, not per invocation. The sliding-window scan runs once per script invocation.
 - **Compromise parsing** (for `#Tag` selectors) runs once per pipeline invocation, shared across all rules
 - **Function rules** run in a sandboxed Web Worker (no DOM access, no main-thread blocking)
 - **Timeout:** Rules that don't return within a configurable limit (default: 1 second) are terminated
@@ -421,7 +515,43 @@ Scripts run user-authored code and must be sandboxed:
 - **Execution environment:** Web Worker (no DOM access, no main-thread blocking)
 - **Communication:** Message passing (input string in, output string out)
 - **No network by default:** Scripts cannot make fetch/XHR calls unless explicitly granted permission
-- **Timeout:** Configurable per-script (default: 1 second)
+- **Timeout:** Configurable per-script (default: 1 second). LLM transforms need much longer timeouts (30–60 seconds) — see Open Questions.
+
+### Capabilities
+
+Scripts declare capabilities in `meta` to access resources beyond pure text-in/text-out:
+
+```typescript
+export const meta = {
+	name: 'Formal Rewrite',
+	capabilities: ['network'] // or: ['llm'], ['network:localhost']
+};
+```
+
+| Capability          | What it grants                                  | Use case                                         |
+| ------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| `network`           | Full `fetch` access                             | Cloud LLM APIs, external services                |
+| `network:localhost` | `fetch` restricted to `localhost`/`127.0.0.1`   | Local LLM servers (Ollama, LM Studio)            |
+| `llm`               | Runner-provided LLM inference via `context.llm` | Scripts that need LLM without managing endpoints |
+
+The `llm` capability is the recommended path for LLM transforms. The script doesn't know or care whether the runner uses a local sidecar (Tauri-managed llama.cpp), the user's Ollama instance, or a cloud API — that's a runner/platform concern. This keeps scripts portable across Tauri, web, and future platforms.
+
+```typescript
+export const meta = {
+	name: 'Formal Rewrite',
+	capabilities: ['llm']
+};
+
+export async function transform(text: string, config, context): Promise<string> {
+	return context.llm.generate({
+		prompt: `Rewrite the following text more formally:\n\n${text}`
+	});
+}
+```
+
+The `network` capability is the escape hatch for scripts that need to talk to specific endpoints directly (custom APIs, self-hosted services). The `llm` capability is preferred because the runner can optimize model loading, share instances across scripts, and provide a consistent UX (model picker, progress indicator).
+
+Scripts without any capabilities declaration run in a pure sandbox — no network, no context, no side effects. This is the default for `rules`-only and `words`-only scripts.
 
 ---
 
@@ -435,6 +565,7 @@ Users write rules against plain text. The runner handles metadata (timestamps, c
 | 1:0 deletion (remove) | "um" → ""                      | Exact — token removed, gap in timestamps      |
 | N:1 merge             | "question mark" → "?"          | Good — span merged (min start, max end)       |
 | 1:N expansion         | "addr" → "123 Main St"         | Approximate — original span subdivided evenly |
+| Preferred word match  | "Chat G P T" → "ChatGPT"       | Good — N tokens merged into one span          |
 | Case change           | toLowerCase                    | Exact — same tokens, same metadata            |
 | Regex across tokens   | `/the\s+quick/` → "a fast"     | Best-effort — heuristic time division         |
 | Function transform    | arbitrary `(string) => string` | Best-effort or none                           |
@@ -453,6 +584,7 @@ The script format is designed to be LLM-friendly:
 
 - Self-contained single file
 - `rules` export is a plain object — data or functions
+- `words` export is a plain object — preferred spellings
 - `settings` export generates GUI automatically — no UI code
 - `meta` export provides context
 - Standard JS/TS string methods, no framework dependencies
@@ -468,7 +600,7 @@ The agent produces a complete `.transform.ts` that RIFT loads immediately.
 ## Storage
 
 - **Transform scripts:** Stored as text in `localStorage`. Import/export as `.transform.ts` files.
-- **Purely declarative scripts** (all string rules): Can also be stored/shared as `.jsonc`.
+- **Purely declarative scripts** (all string `rules` and `words`): Can also be stored/shared as `.jsonc`.
 - **Presets:** Bundled scripts. Community presets downloadable from a repository.
 - **Pipeline config:** Which scripts are enabled and in what order. Stored in `localStorage`.
 - **Profiles:** A profile is a named configuration of which scripts are enabled and which individual rules are toggled off. Users switch profiles for different contexts (casual, medical, programming, etc.). The active profile and all profile data are stored in `localStorage`. Scripts themselves are never modified — profiles are a view layer over them.
@@ -477,7 +609,7 @@ The agent produces a complete `.transform.ts` that RIFT loads immediately.
 interface TransformProfile {
 	name: string;
 	enabledScripts: string[]; // which scripts are active
-	disabledRules: Record<string, string[]>; // per-script rule overrides
+	disabledRules: Record<string, string[]>; // per-script rule/word overrides
 	triggers: Record<string, TransformTrigger>; // per-script or per-rule trigger
 }
 
@@ -516,6 +648,7 @@ Voice-triggered transforms (e.g., say "uppercase that") are a future extension o
 | [Hunspell REP](https://hunspell.github.io/)                                       | Plain text pairs | De facto standard for spell-check replacement suggestions                |
 | [compromise.cool](https://compromise.cool)                                        | JS API           | CSS-like selectors over linguistically-tagged tokens                     |
 | [Handy PR #455](https://github.com/cjpais/Handy/pull/455)                         | JSON             | Real user demand: spoken punctuation is the #1 use case                  |
+| [Handy PR #711](https://github.com/cjpais/Handy/pull/711)                         | Rust             | N-gram fuzzy matching for preferred word lists (flat list, not pairs)    |
 | [Civet](https://civet.dev)                                                        | TS superset      | Pattern matching syntax for JS/TS; compiles in browser                   |
 
 ### Standards Landscape
@@ -529,18 +662,23 @@ No universal standard exists for text replacement rules. Despite ubiquity across
 - **Compromise term `id` stability:** Does compromise preserve term `id` through grammar transforms (`.toPastTense()`, `.toLowerCase()`)? Needs testing before relying on side-map metadata preservation through NLP transforms.
 - **Rule ordering edge cases:** Insertion-order preservation in JS objects is guaranteed for string keys (ES2015+), but should we add explicit ordering as a fallback?
 - **Preset versioning:** How to handle preset updates when users have customized individual rules? Merge strategy needed.
-- **Async transforms:** `rules` are always sync (they run on every transcription result and must be fast). `transform` functions can be async for LLM-powered or API-based transforms — these should only be used with manual triggers (hotkey/command/prompt), not auto mode, to avoid blocking the transcription pipeline.
+- **Async transforms:** `rules` and `words` are always sync (they run on every transcription result and must be fast). `transform` functions can be async for LLM-powered or API-based transforms — these should only be used with manual triggers (hotkey/command/prompt), not auto mode, to avoid blocking the transcription pipeline.
 - **Interim results:** Should transforms run on interim (partial) transcription, or only finals? Interims give faster feedback but waste compute on text that will be revised. Configurable per-script?
+- **LLM transform timeouts:** The 1-second default timeout is correct for `rules` and `words`. Async `transform()` functions calling LLMs need 30–60 seconds (local models: 2–30s, cloud: 1–5s). Scripts should declare a longer timeout in `meta` (e.g., `meta.timeout: 60000`). The runner should enforce per-script overrides and show a progress indicator for long-running transforms.
+- **LLM streaming:** An LLM transform that blocks for 10–30 seconds with no feedback is poor UX. Should `transform()` support returning a `ReadableStream` or using a progress callback for progressive output? This would let the UI show partial results as the LLM generates.
+- **Preferred words shape:** The exact type for `words` values (named match levels like `'exact'`/`'close'`/`'loose'` vs. numeric thresholds vs. both) needs design iteration. The match levels are points on a strictness scale, not orthogonal strategies — `'loose'` includes Levenshtein, which includes exact. A numeric escape hatch may supplement or replace named levels.
+- **LLM runner backends:** The `llm` capability abstracts away the inference backend. In a Tauri shell, the runner could manage a sidecar process (bundled llama.cpp), invoke native Rust bindings, or proxy to the user's Ollama/LM Studio. On web, it proxies to a cloud API. The `context.llm` interface should be backend-agnostic — scripts call `context.llm.generate()` without knowing the backend. Exact interface shape TBD.
 
 ### From competitive analysis
 
 The following gaps were identified by reviewing 561 GitHub issues/PRs across Whispering and Handy. See [transforms-research.md](./transforms-research.md) for full evidence and source index.
 
-- **Multi-word / n-gram matching:** Compound words split by STT (e.g., "Chat G P T" → "ChatGPT"). Handy ships this (PR #711). This is a `transform()` use case, not a literal matcher extension — a "Custom Vocabulary" preset with a word list setting and sliding-window scan. The Match Patterns section should note that token-boundary reconciliation is handled via `transform()`, not rules.
+- **Multi-word / n-gram matching:** Compound words split by STT (e.g., "Chat G P T" → "ChatGPT"). Handy ships this (PR #711). Now addressed as the `words` export — a pipeline primitive with fuzzy n-gram matching, not a `transform()` preset. See the Preferred Words section.
 - **Transform context:** Both projects independently invented template variables (`$current_app`, `$language`, `$short_prev_transcript`). The spec's `config` argument should expand to include runtime context (detected language, focused app, previous text, etc.), gated by per-script capability declarations. Subsumes the language-aware selection gap — if scripts can read `context.language`, language filtering is a runner feature. See risks: non-determinism, privacy/sandboxing tension, platform divergence.
 - **Hallucination / artifact cleanup:** Repeated words, phantom phrases, invisible Unicode, bracketed metadata (`[AUDIO]`, `(pause)`). Universal across providers. Needs a "Transcription Cleanup" preset distinct from filler removal.
 - **Number normalization preset:** Top-5 user request (Handy #611). `#Value` + `toNumber` exists in the spec but has no appendix preset.
 - **LLM prompt guardrails:** LLMs answer questions in transcription text instead of transforming them (Whispering #1145). Spec should document prompt structure that separates content from instruction.
+- **Local LLM transforms:** Users want local LLM inference without running a separate server (Whispering #821, #692). The `llm` capability + runner-managed backends (sidecar, native bindings) addresses this. See Capabilities section.
 
 ---
 

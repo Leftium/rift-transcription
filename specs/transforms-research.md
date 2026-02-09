@@ -79,43 +79,14 @@ This also affects: acronyms spoken as letters ("A P I" → "API"), spelled-out w
 
 **Limitation:** The fixed 3-token window is too small for some cases ("Chat G P T" is 4 tokens, "H T M L" is 4). The PR's test passes for "Chat G P T" only because the fuzzy matching threshold is loose enough that a 3-token partial concatenation gets close. This is fragile — a 5-token split would fail. The max window size should be derived from the vocabulary itself (e.g., longest word's character count as a ceiling), not hardcoded.
 
-**Resolution:** This is a `transform()` use case, not a `rules` use case. The literal matcher should stay simple (exact phrase matching). N-gram vocabulary reconciliation is a scanning algorithm that belongs in a preset `transform()` function with a `settings.words` list:
+**Resolution:** ~~Originally classified as a `transform()` preset.~~ **Promoted to pipeline primitive.** Further research revealed that Handy's custom words are a flat list of preferred spellings — not replacement pairs. This is a fundamentally different data model from `rules` (which are match → replace). Users don't know what their STT will produce, so they can't write replacement pairs. They just know the correct spelling.
 
-```typescript
-// custom-vocabulary.transform.ts
+The `words` export is now the third pipeline primitive alongside `rules` and `transform()`. See the Preferred Words section in the spec. Key design decisions:
 
-export const meta = {
-	name: 'Custom Vocabulary',
-	description: 'Fix compound words split by STT'
-};
-
-export const settings = {
-	words: {
-		type: 'list' as const,
-		label: 'Custom words',
-		item: { type: 'string' },
-		default: []
-	},
-	match: {
-		type: 'select' as const,
-		label: 'Matching strategy',
-		options: ['exact', 'levenshtein', 'phonetic'],
-		default: 'exact'
-	}
-};
-
-export function transform(text: string, config): string {
-	// Derive max window size from vocabulary
-	// Sliding window scan, concatenate tokens, compare against words
-	// Replace matches, preserve case and punctuation
-}
-```
-
-The `settings.words` list renders as a tag/chip input in the GUI — non-programmers can add vocabulary without understanding n-grams. The runner derives the window size from the vocabulary, so users don't need to reason about how their STT provider tokenizes.
-
-If profiling later shows that multiple scripts each scanning sliding windows is a bottleneck, promote to a runner primitive with the same script-facing API. Start as a preset, optimize if needed.
-
-The spec should note in the Match Patterns section that token-boundary reconciliation (compound words split by STT) is handled via `transform()`, not the literal matcher — so users don't expect `"ChatGPT": "ChatGPT"` in rules to fix "Chat G P T".
+- **Data model:** `Record<string, MatchLevel | WordOptions>` — key is the preferred spelling, value configures matching (like `rules` where key is the match pattern, value is the replacement)
+- **Pipeline position:** After `rules`, before `transform()` — increasing fuzziness order
+- **Per-word config:** Match level, window size, threshold, case sensitivity — all with sensible defaults derived from the word itself
+- **GUI:** Single-column word list with expandable per-word settings (simpler than `rules`' two-column table)
 
 ---
 
@@ -406,22 +377,22 @@ The runner auto-filters scripts by detected transcription language. Scripts with
 
 ## Summary
 
-| Priority | Gap                                 | Category          | Spec impact                                                                                                                   |
-| -------- | ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| HIGH     | 4. Transform context                | Architectural     | Changes function signature contract; scripts need runtime state (language, app, previous text) gated by capabilities          |
-| HIGH     | 1. N-gram vocabulary matching       | Preset            | `transform()` use case, not a runner primitive; needs Match Patterns note that literal matcher doesn't handle split compounds |
-| LOW      | 2. Hallucination / artifact cleanup | Preset            | "Transcription Cleanup" preset; minor question on whether runner auto-strips invisible characters                             |
-| LOW      | 3. External command filter          | Out of scope      | Script expressiveness reduces need; remaining use case is delivery/side effects                                               |
-| —        | 5. Config portability               | Out of scope      | App-level concern, not transforms spec                                                                                        |
-| —        | 6. Number normalization             | Preset            | Appendix addition; `#Value` + `toNumber` already in spec                                                                      |
-| —        | 7. Voice-prompted transforms        | App-level         | Stop-word → slash menu; not a script concern                                                                                  |
-| —        | 8. Output delivery hooks            | Out of scope      | Post-transform delivery, not transforms                                                                                       |
-| —        | 9. Language-aware selection         | Subsumed by Gap 4 | `meta.language` + `context.language` in runner                                                                                |
-| —        | 10. Translation                     | Preset            | Async `transform()` calling LLM; not architectural                                                                            |
-| —        | 11. LLM prompt guardrails           | Documentation     | Prompt structure guidance, not a spec change                                                                                  |
-| —        | 12. Contraction reversal            | Documentation     | One-line note on existing preset                                                                                              |
+| Priority | Gap                                 | Category          | Spec impact                                                                                                                                                                                                                                                |
+| -------- | ----------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HIGH     | 4. Transform context                | Architectural     | Changes function signature contract; scripts need runtime state (language, app, previous text) gated by capabilities                                                                                                                                       |
+| HIGH     | 1. N-gram vocabulary matching       | **Architectural** | **Promoted to pipeline primitive:** new `words` export with fuzzy n-gram matching. No longer a preset — it's the third export alongside `rules` and `transform()`. Handy's flat word list (not replacement pairs) validated this as a distinct data model. |
+| LOW      | 2. Hallucination / artifact cleanup | Preset            | "Transcription Cleanup" preset; minor question on whether runner auto-strips invisible characters                                                                                                                                                          |
+| LOW      | 3. External command filter          | Out of scope      | Script expressiveness reduces need; remaining use case is delivery/side effects. Local LLM use case addressed by `llm` capability.                                                                                                                         |
+| —        | 5. Config portability               | Out of scope      | App-level concern, not transforms spec                                                                                                                                                                                                                     |
+| —        | 6. Number normalization             | Preset            | Appendix addition; `#Value` + `toNumber` already in spec                                                                                                                                                                                                   |
+| —        | 7. Voice-prompted transforms        | App-level         | Stop-word → slash menu; not a script concern                                                                                                                                                                                                               |
+| —        | 8. Output delivery hooks            | Out of scope      | Post-transform delivery, not transforms                                                                                                                                                                                                                    |
+| —        | 9. Language-aware selection         | Subsumed by Gap 4 | `meta.language` + `context.language` in runner                                                                                                                                                                                                             |
+| —        | 10. Translation                     | Preset            | Async `transform()` calling LLM; not architectural                                                                                                                                                                                                         |
+| —        | 11. LLM prompt guardrails           | Documentation     | Prompt structure guidance, not a spec change                                                                                                                                                                                                               |
+| —        | 12. Contraction reversal            | Documentation     | One-line note on existing preset                                                                                                                                                                                                                           |
 
-**Architectural gaps:** Only Gap 4 (TransformContext) requires a spec change to the core model. Gap 1 (n-gram) requires a note clarifying what literal matching does and doesn't handle, plus a preset example. Everything else is presets, documentation, or out of scope.
+**Architectural gaps:** Gap 4 (TransformContext) and Gap 1 (preferred words) both require spec changes to the core model. Gap 1 was promoted from preset to pipeline primitive after discovering that Handy's custom words are a flat preferred-spellings list (not replacement pairs) — a fundamentally different data model from `rules`. The `words` export now sits between `rules` and `transform()` in the pipeline. Everything else is presets, documentation, or out of scope.
 
 ---
 

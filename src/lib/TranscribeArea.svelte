@@ -125,22 +125,9 @@
 
 	// Collect all words across interim segments for per-word rendering.
 	// For BPE sources, trim leading whitespace from the first token —
-	// interimSpaceBefore already handles smart spacing at the boundary.
-	let interimWords: Word[] = $derived.by(() => {
-		const words = Array.from(interims.values()).flatMap((s) => s.words ?? []);
-		if (words.length > 0 && /^\s/.test(words[0].text)) {
-			words[0] = { ...words[0], text: words[0].text.trimStart() };
-		}
-		return words;
-	});
-
-	// Detect subword BPE tokens (Sherpa) vs whole words (Deepgram).
-	// BPE tokens encode word boundaries as leading whitespace (e.g., " name"),
-	// while whole-word sources emit clean words (e.g., "name"). When BPE tokens
-	// are present, spaces are already embedded — don't add inter-word spaces.
-	let interimWordsAreBpe: boolean = $derived(
-		interimWords.length > 0 && interimWords.some((w) => /^\s/.test(w.text))
-	);
+	// All sources now emit whole-word Word objects (Sherpa coalesces BPE tokens
+	// in SherpaSource). interimSpaceBefore handles smart spacing at the boundary.
+	let interimWords: Word[] = $derived(Array.from(interims.values()).flatMap((s) => s.words ?? []));
 
 	// Split committed text around insertion range for preview rendering.
 	// Selected text is excluded — replaced by interim.
@@ -431,7 +418,7 @@
 								>{part.text}</span
 							>{/if}{:else}<span class="committed">{part.text}</span>{/if}{/each}{:else}<span
 					class="committed">{beforeCursor}</span
-				>{/if}{#if interimWords.length > 0}{interimSpaceBefore}{#each interimWords as word, wi (wi)}{#if wi > 0 && !interimWordsAreBpe}{' '}{/if}<span
+				>{/if}{#if interimWords.length > 0}{interimSpaceBefore}{#each interimWords as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
 						class="interim-word"
 						class:stable={interimStable}
 						class:unstable={!interimStable}

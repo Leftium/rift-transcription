@@ -267,29 +267,87 @@ export class SherpaSource implements TranscriptionSource {
 	) {
 		if (!this.onResult) return;
 
-		// Build word-level detail from tokens + timestamps (C++ server)
-		// Include per-token confidence from log-probs when available.
+		// Build word-level detail from tokens + timestamps (C++ server).
+		// Sherpa emits BPE subword tokens (e.g. " My", " na", "me") — coalesce
+		// them into whole words so downstream consumers get clean Word objects.
+		// Raw tokens remain accessible via transcript.raw.
 		let words: Word[] | undefined;
 		if (raw.tokens && raw.timestamps && raw.tokens.length === raw.timestamps.length) {
 			const startTime = raw.start_time ?? 0;
-			words = raw.tokens.map((token, i) => {
-				// Combined confidence from ASR model + LM + context scores (all log-domain).
-				// Missing arrays default to 0 contribution. exp() converts to 0.0–1.0.
+			const hasProbs = (raw.ys_probs?.length ?? 0) > 0 || (raw.lm_probs?.length ?? 0) > 0;
+
+			// First pass: build per-token data
+			const tokens = raw.tokens.map((token, i) => {
 				const logProb =
 					(raw.ys_probs?.[i] ?? 0) + (raw.lm_probs?.[i] ?? 0) + (raw.context_scores?.[i] ?? 0);
-				// Only set confidence if we had actual prob data
-				const hasProbs = (raw.ys_probs?.length ?? 0) > 0 || (raw.lm_probs?.length ?? 0) > 0;
 				return {
 					text: token,
 					start: startTime + raw.timestamps![i],
 					end:
 						i + 1 < raw.timestamps!.length
 							? startTime + raw.timestamps![i + 1]
-							: startTime + raw.timestamps![i] + 0.1, // estimate
-					...(hasProbs ? { confidence: Math.exp(logProb) } : {})
+							: startTime + raw.timestamps![i] + 0.1,
+					confidence: hasProbs ? Math.exp(logProb) : undefined
 				};
 			});
+
+			// Second pass: coalesce BPE subword tokens into whole words.
+			// BPE convention: leading whitespace = new word boundary.
+			// e.g. [" My", " na", "me"] → words ["My", "name"]
+			words = [];
+			let current: { texts: string[]; start: number; end: number; confidences: number[] } | null =
+				null;
+
+			for (const tok of tokens) {
+				const isWordStart = /^\s/.test(tok.text) || current === null;
+				if (isWordStart) {
+					// Flush previous word
+					if (current) {
+						const avgConf =
+							current.confidences.length > 0
+								? current.confidences.reduce((a, b) => a + b, 0) / current.confidences.length
+								: undefined;
+						words.push({
+							text: current.texts.join(''),
+							start: current.start,
+							end: current.end,
+							...(avgConf != null ? { confidence: avgConf } : {})
+						});
+					}
+					current = {
+						texts: [tok.text.trimStart()],
+						start: tok.start,
+						end: tok.end,
+						confidences: tok.confidence != null ? [tok.confidence] : []
+					};
+				} else {
+					// Continuation token — append to current word
+					current!.texts.push(tok.text);
+					current!.end = tok.end;
+					if (tok.confidence != null) current!.confidences.push(tok.confidence);
+				}
+			}
+			// Flush last word
+			if (current) {
+				const avgConf =
+					current.confidences.length > 0
+						? current.confidences.reduce((a, b) => a + b, 0) / current.confidences.length
+						: undefined;
+				words.push({
+					text: current.texts.join(''),
+					start: current.start,
+					end: current.end,
+					...(avgConf != null ? { confidence: avgConf } : {})
+				});
+			}
 		}
+
+		// Transcript-level confidence: average across words (when available).
+		const wordsWithConf = words?.filter((w) => w.confidence != null) ?? [];
+		const confidence =
+			wordsWithConf.length > 0
+				? wordsWithConf.reduce((sum, w) => sum + w.confidence!, 0) / wordsWithConf.length
+				: undefined;
 
 		// Sherpa interims are append-only — earlier tokens never change.
 		// isFinal: true always (text is stable), isEndpoint only on silence detection.
@@ -299,6 +357,7 @@ export class SherpaSource implements TranscriptionSource {
 			isEndpoint,
 			segmentId: segment,
 			start: raw.start_time,
+			confidence,
 			words,
 			raw
 		};

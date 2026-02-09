@@ -278,7 +278,7 @@ export class SherpaSource implements TranscriptionSource {
 				const logProb =
 					(raw.ys_probs?.[i] ?? 0) + (raw.lm_probs?.[i] ?? 0) + (raw.context_scores?.[i] ?? 0);
 				// Only set confidence if we had actual prob data
-				const hasProbs = raw.ys_probs != null || raw.lm_probs != null;
+				const hasProbs = (raw.ys_probs?.length ?? 0) > 0 || (raw.lm_probs?.length ?? 0) > 0;
 				return {
 					text: token,
 					start: startTime + raw.timestamps![i],

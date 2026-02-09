@@ -412,22 +412,25 @@
 	     Svelte preserves template whitespace as text nodes, so all tags/blocks
 	     must be on one continuous line with no gaps. -->
 	<div class="preview" aria-hidden="true">
-		{#if displayValue}{#if showUtterances && utteranceRanges.length > 0}{@const parts =
+		{#if displayValue}{#if (showUtterances || showConfidence) && utteranceRanges.length > 0}{@const parts =
 					splitByUtterances(
 						beforeCursor,
 						utteranceRanges
 					)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}<span
-								class="utterance"
+								class:utterance={showUtterances}
+								class:committed={!showUtterances}
 								>{#each part.words as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
 										class="confidence-word"
 										style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
 									>{/each}</span
 							>{:else if showConfidence && part.confidence != null}<span
-								class="utterance"
+								class:utterance={showUtterances}
+								class:committed={!showUtterances}
 								style:opacity={confidenceToOpacity(part.confidence)}>{part.text}</span
-							>{:else}<span class="utterance">{part.text}</span>{/if}{:else}<span class="committed"
-							>{part.text}</span
-						>{/if}{/each}{:else}<span class="committed">{beforeCursor}</span
+							>{:else}<span class:utterance={showUtterances} class:committed={!showUtterances}
+								>{part.text}</span
+							>{/if}{:else}<span class="committed">{part.text}</span>{/if}{/each}{:else}<span
+					class="committed">{beforeCursor}</span
 				>{/if}{#if interimWords.length > 0}{interimSpaceBefore}{#each interimWords as word, wi (wi)}{#if wi > 0 && !interimWordsAreBpe}{' '}{/if}<span
 						class="interim-word"
 						class:stable={interimStable}

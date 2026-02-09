@@ -4,8 +4,10 @@
 	import CopyButton from '$lib/CopyButton.svelte';
 	import EventLog from '$lib/EventLog.svelte';
 	import { VoiceInputController } from '$lib/VoiceInputController.svelte';
+	import { broadcastTranscript } from '$lib/types.js';
+	import type { Transcript } from '$lib/types.js';
 
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	const voice = new VoiceInputController();
 
@@ -14,6 +16,53 @@
 	let value2 = $state('');
 	let showUtterances = $state(false);
 	let showConfidence = $state(false);
+	let transcribeAreaEl: HTMLElement | undefined = $state();
+
+	async function seedTestData() {
+		// Focus the TranscribeArea textarea so it receives the events
+		const textarea = transcribeAreaEl?.querySelector('textarea');
+		if (textarea) textarea.focus();
+		await tick();
+
+		// Simulate two utterances with deliberately varied word confidences
+		const utterances: Transcript[] = [
+			{
+				text: 'The quick brown fox',
+				isFinal: true,
+				isEndpoint: true,
+				segmentId: 0,
+				confidence: 0.85,
+				words: [
+					{ text: 'The', start: 0, end: 0.3, confidence: 0.99 },
+					{ text: 'quick', start: 0.3, end: 0.7, confidence: 0.72 },
+					{ text: 'brown', start: 0.7, end: 1.1, confidence: 0.45 },
+					{ text: 'fox', start: 1.1, end: 1.4, confidence: 0.91 }
+				]
+			},
+			{
+				text: 'jumps over the lazy dog',
+				isFinal: true,
+				isEndpoint: true,
+				segmentId: 1,
+				confidence: 0.6,
+				words: [
+					{ text: 'jumps', start: 1.5, end: 1.9, confidence: 0.88 },
+					{ text: 'over', start: 1.9, end: 2.2, confidence: 0.3 },
+					{ text: 'the', start: 2.2, end: 2.4, confidence: 0.95 },
+					{ text: 'lazy', start: 2.4, end: 2.8, confidence: 0.15 },
+					{ text: 'dog', start: 2.8, end: 3.1, confidence: 0.55 }
+				]
+			}
+		];
+
+		for (const t of utterances) {
+			broadcastTranscript(t);
+			await tick();
+		}
+
+		showUtterances = true;
+		showConfidence = true;
+	}
 
 	// Persist Deepgram API key in localStorage
 	const DG_KEY = 'deepgram-api-key';
@@ -102,14 +151,17 @@
 					<input type="checkbox" bind:checked={showConfidence} />
 					Show confidence
 				</label>
+				<button class="seed-btn" onclick={seedTestData}>Seed test data</button>
 			</div>
-			<TranscribeArea
-				bind:value={value2}
-				placeholder="Type or speak (with interims)..."
-				{showUtterances}
-				{showConfidence}
-				debug
-			/>
+			<div bind:this={transcribeAreaEl}>
+				<TranscribeArea
+					bind:value={value2}
+					placeholder="Type or speak (with interims)..."
+					{showUtterances}
+					{showConfidence}
+					debug
+				/>
+			</div>
 			<CopyButton value={value2} />
 		</section>
 
@@ -200,6 +252,11 @@
 		align-items: center;
 		gap: 4px;
 		cursor: pointer;
+	}
+
+	.seed-btn {
+		font-size: 12px;
+		padding: 3px 8px;
 	}
 
 	.plain-textarea {

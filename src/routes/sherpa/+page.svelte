@@ -8,40 +8,31 @@ cp -r sherpa-onnx-v1.12.23-osx-universal2-shared/lib .`,
 
 		quarantine: `xattr -r -d com.apple.quarantine ~/sherpa-onnx/`,
 
-		'model-small': `cd ~/sherpa-onnx && mkdir -p models && cd models
+		'model-nemotron': `cd ~/sherpa-onnx && mkdir -p models && cd models
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2
+tar xf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2`,
+
+		'model-zipformer-small': `cd ~/sherpa-onnx && mkdir -p models && cd models
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
 tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2`,
 
-		'model-best': `cd ~/sherpa-onnx && mkdir -p models && cd models
-wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2
-tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2`,
+		'start-nemotron': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
+  --port=6006 \\
+  --max-batch-size=1 \\
+  --loop-interval-ms=10 \\
+  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/tokens.txt \\
+  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/encoder.int8.onnx \\
+  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/decoder.int8.onnx \\
+  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/joiner.int8.onnx`,
 
-		'start-small': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
+		'start-zipformer-small': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
   --port=6006 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
   --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/tokens.txt \\
   --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/encoder.onnx \\
   --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx`,
-
-		'start-best-fp32': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
-  --port=6006 \\
-  --max-batch-size=1 \\
-  --loop-interval-ms=10 \\
-  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/tokens.txt \\
-  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/encoder-epoch-99-avg-1.onnx \\
-  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/decoder-epoch-99-avg-1.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/joiner-epoch-99-avg-1.onnx`,
-
-		'start-best-int8': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
-  --port=6006 \\
-  --max-batch-size=1 \\
-  --loop-interval-ms=10 \\
-  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/tokens.txt \\
-  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/encoder-epoch-99-avg-1.int8.onnx \\
-  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/decoder-epoch-99-avg-1.int8.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-2023-06-21/joiner-epoch-99-avg-1.int8.onnx`
+  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx`
 	};
 
 	let copiedId = $state('');
@@ -69,7 +60,7 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2`,
 	</p>
 
 	<h2>1. Download Server Binary</h2>
-	<p>For macOS (Universal — works on Intel and Apple Silicon):</p>
+	<p>For macOS (Universal -- works on Intel and Apple Silicon):</p>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('download-binary')}>
 			{copiedId === 'download-binary' ? '✓' : 'Copy'}
@@ -94,27 +85,61 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2`,
 		</a>.
 	</p>
 
-	<h2>2. Download a Model</h2>
+	<h2>2. Choose a Model</h2>
 
-	<h3>Best accuracy model (~546 MB, best WER, recommended)</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('model-best')}>
-			{copiedId === 'model-best' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['model-best']}</code></pre>
-	</div>
-	<p class="note">
-		<strong>Note:</strong> Trained on LibriSpeech + GigaSpeech. Best accuracy (WER 2.2% clean). Outputs
-		ALL CAPS.
-	</p>
+	<details open class="model-group">
+		<summary>
+			<strong>Nemotron Streaming (~600 MB) -- recommended</strong>
+			<span class="model-desc">
+				NVIDIA's cache-aware streaming model (600M params int8). Avg WER 7.2% with punctuation and
+				capitalization. Trained on 285k hours.
+				<a
+					href="https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b"
+					target="_blank"
+					rel="noopener"
+				>
+					Model card
+				</a>
+			</span>
+		</summary>
+		<h4>Download</h4>
+		<div class="code-block">
+			<button class="copy-btn" onclick={() => copyCode('model-nemotron')}>
+				{copiedId === 'model-nemotron' ? '✓' : 'Copy'}
+			</button>
+			<pre><code>{codeBlocks['model-nemotron']}</code></pre>
+		</div>
+		<h4>Start server</h4>
+		<div class="code-block">
+			<button class="copy-btn" onclick={() => copyCode('start-nemotron')}>
+				{copiedId === 'start-nemotron' ? '✓' : 'Copy'}
+			</button>
+			<pre><code>{codeBlocks['start-nemotron']}</code></pre>
+		</div>
+	</details>
 
-	<h3>Small model (~55 MB, faster, lower accuracy)</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('model-small')}>
-			{copiedId === 'model-small' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['model-small']}</code></pre>
-	</div>
+	<details class="model-group">
+		<summary>
+			<strong>Zipformer Small (~55 MB) -- lightweight alternative</strong>
+			<span class="model-desc">
+				Fastest option, lowest resource usage. No punctuation or capitalization, lower accuracy.
+			</span>
+		</summary>
+		<h4>Download</h4>
+		<div class="code-block">
+			<button class="copy-btn" onclick={() => copyCode('model-zipformer-small')}>
+				{copiedId === 'model-zipformer-small' ? '✓' : 'Copy'}
+			</button>
+			<pre><code>{codeBlocks['model-zipformer-small']}</code></pre>
+		</div>
+		<h4>Start server</h4>
+		<div class="code-block">
+			<button class="copy-btn" onclick={() => copyCode('start-zipformer-small')}>
+				{copiedId === 'start-zipformer-small' ? '✓' : 'Copy'}
+			</button>
+			<pre><code>{codeBlocks['start-zipformer-small']}</code></pre>
+		</div>
+	</details>
 
 	<p>
 		For all available models:
@@ -127,44 +152,18 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2`,
 		</a>.
 	</p>
 
-	<h2>3. Start the Server</h2>
-
-	<h3>With best model (fp32 — recommended):</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('start-best-fp32')}>
-			{copiedId === 'start-best-fp32' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['start-best-fp32']}</code></pre>
-	</div>
-
-	<h3>With best model (int8 — faster, slightly less accurate):</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('start-best-int8')}>
-			{copiedId === 'start-best-int8' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['start-best-int8']}</code></pre>
-	</div>
-
-	<h3>With small model (kroko):</h3>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('start-small')}>
-			{copiedId === 'start-small' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['start-small']}</code></pre>
-	</div>
-
-	<h2>Server Flags</h2>
+	<h2>3. Server Flags</h2>
 	<ul class="flags">
 		<li>
-			<code>--port=6006</code> — WebSocket port (must match the URL in the app, default
+			<code>--port=6006</code> -- WebSocket port (must match the URL in the app, default
 			<code>ws://localhost:6006</code>)
 		</li>
 		<li>
-			<code>--max-batch-size=1</code> — Process immediately instead of batching (reduces latency for single
-			user)
+			<code>--max-batch-size=1</code> -- Process immediately instead of batching (reduces latency for
+			single user)
 		</li>
 		<li>
-			<code>--loop-interval-ms=10</code> — Server polling interval in ms (lower = less latency)
+			<code>--loop-interval-ms=10</code> -- Server polling interval in ms (lower = less latency)
 		</li>
 	</ul>
 </main>
@@ -207,6 +206,41 @@ tar xf sherpa-onnx-streaming-zipformer-en-2023-06-21.tar.bz2`,
 		font-size: 0.95rem;
 		margin-top: 20px;
 		margin-bottom: 6px;
+	}
+
+	h4 {
+		font-size: 0.85rem;
+		margin: 14px 0 4px;
+		color: #555;
+	}
+
+	.model-group {
+		border: 1px solid #ddd;
+		border-radius: 6px;
+		padding: 0 16px;
+		margin: 12px 0;
+	}
+
+	.model-group[open] {
+		padding-bottom: 12px;
+	}
+
+	.model-group summary {
+		cursor: pointer;
+		padding: 12px 0;
+		list-style: revert;
+	}
+
+	.model-group summary strong {
+		font-size: 0.95rem;
+	}
+
+	.model-desc {
+		display: block;
+		font-size: 13px;
+		color: #666;
+		margin-top: 4px;
+		line-height: 1.4;
 	}
 
 	p {

@@ -70,20 +70,15 @@
 	let insertionStart: number | null = $state(null);
 	let insertionEnd: number | null = $state(null);
 
-	// Cursor restore mechanism: transcript handlers set the desired position,
-	// and a $effect applies it after Svelte has flushed displayValue to the DOM.
-	// Using $effect (not tick/rAF) guarantees we run after Svelte's own DOM writes.
-	let cursorRequest: { pos: number; seq: number } | null = $state(null);
-	let cursorSeq = 0;
-
-	$effect(() => {
-		if (cursorRequest != null && textareaEl) {
-			textareaEl.setSelectionRange(cursorRequest.pos, cursorRequest.pos);
-		}
-	});
-
+	// Schedule cursor restore after Svelte's DOM flush.
+	// Called directly from handlers that know the desired position —
+	// no effect needed, rAF runs after Svelte updates the textarea.
 	function restoreCursor(pos: number) {
-		cursorRequest = { pos, seq: ++cursorSeq };
+		const el = textareaEl;
+		if (!el) return;
+		requestAnimationFrame(() => {
+			el.setSelectionRange(pos, pos);
+		});
 	}
 
 	// After a final for segmentId N, ignore late-arriving interims for

@@ -107,7 +107,7 @@
 		const MIN_OPACITY = 0.2;
 		// Power curve: spreads out the 0.7–1.0 range where most ASR
 		// confidences cluster, making differences more perceptible.
-		return MIN_OPACITY + confidence ** 3 * (1 - MIN_OPACITY);
+		return MIN_OPACITY + confidence ** 5 * (1 - MIN_OPACITY);
 	}
 
 	// All interim segments are stable if every segment has isFinal: true

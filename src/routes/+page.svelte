@@ -93,9 +93,9 @@
 		</section>
 
 		<section class="level">
-			<h2>Level 1: <code>&lt;textarea&gt;</code> + <code>transcribable</code> attachment</h2>
+			<h2>Level 1: <code>&lt;textarea&gt;</code> + <code>rift:transcript</code> event handler</h2>
 			<p class="level-desc">
-				Voice input via attachment. Finals insert at cursor. No interim styling.
+				Listens for transcript events. Final text inserts at cursor. No interim display.
 			</p>
 			<textarea
 				{@attach transcribable}

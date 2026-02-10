@@ -52,11 +52,30 @@
 					{ text: 'lazy', start: 2.4, end: 2.8, confidence: 0.15 },
 					{ text: 'dog', start: 2.8, end: 3.1, confidence: 0.55 }
 				]
+			},
+			{
+				// Words "10"–"100" at 10% confidence increments (0.1, 0.2, …, 1.0)
+				text: '10 20 30 40 50 60 70 80 90 100',
+				isFinal: true,
+				isEndpoint: true,
+				segmentId: 2,
+				confidence: 0.55,
+				words: Array.from({ length: 10 }, (_, i) => ({
+					text: String((i + 1) * 10),
+					start: 4.0 + i * 0.4,
+					end: 4.0 + (i + 1) * 0.4,
+					confidence: (i + 1) / 10
+				}))
 			}
 		];
 
-		for (const t of utterances) {
-			broadcastTranscript(t);
+		for (let i = 0; i < utterances.length; i++) {
+			// Put the confidence gradient swatch on its own line
+			if (i === 2) {
+				value2 += '\n';
+				await tick();
+			}
+			broadcastTranscript(utterances[i]);
 			await tick();
 		}
 

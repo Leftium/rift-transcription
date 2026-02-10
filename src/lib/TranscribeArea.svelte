@@ -102,15 +102,17 @@
 			.trim()
 	);
 
-	// Map confidence (0.0–1.0) to a visible opacity range (0.4–1.0).
-	// Raw confidence can be very low (e.g., 0.01 from Web Speech interims),
-	// which would make text invisible if used directly as opacity.
-	function confidenceToOpacity(confidence: number | undefined): number {
-		if (confidence == null) return 1;
-		const MIN_OPACITY = 0.2;
-		// Power curve: spreads out the 0.7–1.0 range where most ASR
-		// confidences cluster, making differences more perceptible.
-		return MIN_OPACITY + confidence ** 5 * (1 - MIN_OPACITY);
+	// OKLCH interpolation: teal (high confidence) → amber (low confidence).
+	// Endpoints derived from #0d9488 (teal-600) and #d97706 (amber-600).
+	// All three components (L, C, H) interpolate linearly with confidence.
+	const TEAL = { L: 0.6, C: 0.104, H: 185 }; // #0d9488
+	const AMBER = { L: 0.666, C: 0.157, H: 58 }; // #d97706
+	function confidenceToColor(confidence: number | undefined): string {
+		if (confidence == null) return `oklch(${TEAL.L} ${TEAL.C} ${TEAL.H})`;
+		const L = AMBER.L + confidence * (TEAL.L - AMBER.L);
+		const C = AMBER.C + confidence * (TEAL.C - AMBER.C);
+		const H = AMBER.H + confidence * (TEAL.H - AMBER.H);
+		return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H.toFixed(1)})`;
 	}
 
 	// All interim segments are stable if every segment has isFinal: true
@@ -118,12 +120,12 @@
 		interims.size === 0 || Array.from(interims.values()).every((s) => s.isFinal)
 	);
 
-	// Aggregate confidence across interim segments (average), mapped to opacity range
-	let interimOpacity: number = $derived.by(() => {
+	// Aggregate confidence across interim segments (average), mapped to OKLCH color
+	let interimColor: string = $derived.by(() => {
 		const segs = Array.from(interims.values()).filter((s) => s.confidence != null);
-		if (segs.length === 0) return 1;
+		if (segs.length === 0) return confidenceToColor(undefined);
 		const avgConf = segs.reduce((sum, s) => sum + s.confidence!, 0) / segs.length;
-		return confidenceToOpacity(avgConf);
+		return confidenceToColor(avgConf);
 	});
 
 	// Collect all words across interim segments for per-word rendering.
@@ -402,22 +404,21 @@
 	     Svelte preserves template whitespace as text nodes, so all tags/blocks
 	     must be on one continuous line with no gaps. -->
 	<div class="preview" aria-hidden="true">
-		{#if displayValue}{#if (showUtterances || showConfidence) && utteranceRanges.length > 0}{@const parts =
-					splitByUtterances(
-						beforeCursor,
-						utteranceRanges
-					)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}<span
+		{#if displayValue}{#if utteranceRanges.length > 0}{@const parts = splitByUtterances(
+					beforeCursor,
+					utteranceRanges
+				)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}<span
 								class:utterance={showUtterances}
-								class:committed={!showUtterances}
+								class:dictated={!showUtterances}
 								>{#each part.words as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
 										class="confidence-word"
-										style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
+										style:color={confidenceToColor(word.confidence)}>{word.text}</span
 									>{/each}</span
 							>{:else if showConfidence && part.confidence != null}<span
 								class:utterance={showUtterances}
-								class:committed={!showUtterances}
-								style:opacity={confidenceToOpacity(part.confidence)}>{part.text}</span
-							>{:else}<span class:utterance={showUtterances} class:committed={!showUtterances}
+								class:dictated={!showUtterances}
+								style:color={confidenceToColor(part.confidence)}>{part.text}</span
+							>{:else}<span class:utterance={showUtterances} class:dictated={!showUtterances}
 								>{part.text}</span
 							>{/if}{:else}<span class="committed">{part.text}</span>{/if}{/each}{:else}<span
 					class="committed">{beforeCursor}</span
@@ -425,12 +426,12 @@
 						class="interim-word"
 						class:stable={interimStable}
 						class:unstable={!interimStable}
-						style:opacity={confidenceToOpacity(word.confidence)}>{word.text}</span
+						style:color={confidenceToColor(word.confidence)}>{word.text}</span
 					>{/each}{interimSpaceAfter}{:else if interimText}<span
 					class="interim"
 					class:stable={interimStable}
 					class:unstable={!interimStable}
-					style:opacity={interimOpacity}>{interimText}</span
+					style:color={interimColor}>{interimText}</span
 				>{/if}<span class="committed">{afterCursor}</span>{:else}<span class="placeholder"
 				>{placeholder}</span
 			>{/if}
@@ -459,7 +460,7 @@
 			<span><b>baked:</b> {interimsBaked}</span>
 			<span><b>committed≤:</b> {committedThroughSegment}</span>
 			<span><b>stable:</b> {interimStable}</span>
-			<span><b>opacity:</b> {interimOpacity.toFixed(2)}</span>
+			<span><b>color:</b> {interimColor}</span>
 			<span><b>utterances:</b> {utteranceRanges.length}</span>
 		</div>
 		{#if interims.size > 0}
@@ -562,51 +563,65 @@
 
 	.committed {
 		color: #1a1a1a;
+		font-weight: 600;
 	}
 
-	/* Committed voice-input text — solid underline to show utterance boundaries */
+	/* Dictated text without utterance underlines — teal at full confidence, no decoration */
+	.dictated {
+		color: oklch(0.6 0.104 185);
+		font-weight: 600;
+	}
+
+	/* Committed voice-input text — solid underline to show utterance boundaries.
+	   Color comes from inline style:color (OKLCH confidence hue) when showConfidence
+	   is active; otherwise falls back to teal at full confidence. */
 	.utterance {
-		color: #1a1a1a;
+		color: oklch(0.6 0.104 185);
+		font-weight: 600;
 		text-decoration: underline;
 		text-decoration-color: #ccc;
 		text-decoration-style: solid;
 	}
 
-	/* Per-word confidence inside an utterance — opacity varies, underline
-	   comes from the parent .utterance span to stay continuous. */
+	/* Per-word confidence inside an utterance — color set by inline style,
+	   underline comes from the parent .utterance span to stay continuous. */
 	.confidence-word {
 		color: inherit;
+		font-weight: 600;
 	}
 
 	/* Interim text (no per-word data)
 	   Stable = dotted underline (text won't change, not yet committed)
-	   Unstable = dotted underline + italic + lighter color (text may still change)
+	   Unstable = dotted underline + italic + desaturated (text may still change)
+	   Color comes from inline style:color (OKLCH confidence hue) when available.
 	   font-synthesis:none on .transcribe-area prevents faux-italic width drift. */
 	.interim {
 		text-decoration: underline;
 		text-decoration-color: #bbb;
 	}
 	.interim.stable {
-		color: #1a1a1a;
+		color: oklch(0.6 0.104 185);
+		font-weight: 600;
 		text-decoration-style: dotted;
 	}
 	.interim.unstable {
-		color: #888;
+		color: oklch(0.6 0.06 185);
+		font-weight: 600;
 		text-decoration-style: dotted;
 		font-style: italic;
 	}
 
-	/* Per-word interim rendering */
+	/* Per-word interim rendering — inline style:color sets OKLCH confidence hue */
 	.interim-word {
 		text-decoration: underline;
 		text-decoration-color: #bbb;
 	}
 	.interim-word.stable {
-		color: #1a1a1a;
+		font-weight: 600;
 		text-decoration-style: dotted;
 	}
 	.interim-word.unstable {
-		color: #888;
+		font-weight: 600;
 		text-decoration-style: dotted;
 		font-style: italic;
 	}

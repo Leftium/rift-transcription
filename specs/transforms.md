@@ -682,6 +682,223 @@ The following gaps were identified by reviewing 561 GitHub issues/PRs across Whi
 
 ---
 
+## Design Notes
+
+The following design discussions emerged during implementation planning. They extend the Open Questions above with deeper architectural implications.
+
+### POS Constraints on Preferred Words
+
+**Problem:** Fuzzy matching can produce false positives when a preferred word collides with a common word of different part-of-speech. Example: "Svelte" (proper noun, framework name) vs. "spelt" (past tense verb). With `'close'` matching, "I spelt it wrong" could incorrectly become "I Svelte it wrong."
+
+**Solution:** Add optional POS gating to the `words` object form:
+
+```typescript
+export const words = {
+	Svelte: { match: 'close', pos: '#Noun' }
+	// Only replace when matched token(s) are tagged as noun
+};
+```
+
+After the sliding-window finds a fuzzy match candidate, the runner checks the matched span's POS tag(s) from the compromise parse. If the gate is specified and the tag doesn't match, skip the replacement.
+
+**Trade-offs:**
+
+- **Value:** High precision for ambiguous cases. Prevents false positives on words with common homonyms in different POS.
+- **Cost:** Compromise tagging is imperfect, especially on STT output (no punctuation, inconsistent case). Adds dependency on compromise for `words` processing, which is currently pure string manipulation.
+- **Scope:** Narrow. Most proper nouns (ChatGPT, Kubernetes, MacBook Pro) don't collide with verbs/adjectives. Only needed for edge cases.
+
+**Recommendation:** Support as optional `pos` field. Document as a precision tool for ambiguous words. Most entries won't need it.
+
+### Punctuation-First Ordering for Better NLP
+
+**Problem:** Compromise's POS tagger relies heavily on punctuation to identify sentence boundaries and clause structure. Running NLP-dependent operations (POS-gated fuzzy matches, `#Tag` selectors) on unpunctuated text degrades tagging accuracy.
+
+**Example:**
+
+```
+Input:  "I learned svelte period it was great"
+Without punctuation resolved: compromise sees one run-on clause, may tag "svelte" as adverb
+With punctuation resolved:    "I learned svelte. It was great" → "svelte" tagged as noun
+```
+
+**Implication:** Punctuation rules (literal string matching, no NLP) should run _before_ compromise parses the text for NLP-dependent operations.
+
+**This suggests multi-phase execution within each script:**
+
+```
+Phase 1: Literal + regex rules (fast string matching, no NLP)
+         ↓ output feeds into ↓
+Phase 2: Compromise parse (once, on Phase 1 output)
+         ↓ parse used by ↓
+Phase 3: #Tag selector rules (NLP-aware pattern matching)
+Phase 4: Fuzzy/n-gram rules with optional POS gates (batched)
+Phase 5: transform() function (arbitrary logic)
+```
+
+**Insertion-order guarantee becomes:** Insertion order is preserved _within_ each phase. Across phases, the phase order is fixed.
+
+**Trade-off:** This is a constraint — users can't interleave a `#Tag` rule between two literal rules and expect execution to follow declaration order across phases. But it matches how users naturally think: "first fix the punctuation, then fix the spellings."
+
+**Edge case:** A fuzzy match whose output should feed a later `#Tag` rule (e.g., normalize "Chat G P T" → "ChatGPT", then match `#Noun ChatGPT`). Solution: split across scripts. Script 1 does vocabulary normalization, Script 2 does NLP transforms on cleaned text.
+
+### N-gram Batching Optimization
+
+**Problem:** The `words` export has a performance advantage because it runs as a single batched pass:
+
+1. Pre-index all vocabulary (spaces removed, lowercased)
+2. Single sliding-window scan over text
+3. At each position, try all window sizes (longest first, greedy)
+4. Look up concatenated tokens against the full vocabulary index
+
+If fuzzy entries are interspersed with literal rules and executed in strict insertion order, you lose this. Each fuzzy entry needs its own sliding-window scan at its position in the sequence, and you can't share the pre-computed index across entries that have other rules between them.
+
+**Solution:** Batch all fuzzy entries within Phase 4 (see above), regardless of their declaration order relative to literal rules. The batch runs as a single sliding-window pass using a shared vocabulary index.
+
+**Trade-off:** Fuzzy entries don't execute in their declared position — they all run together after Phase 3. But for most scripts (5-20 fuzzy entries on short text), strict ordering between fuzzy entries rarely matters. They're corrections of independent vocabulary items, not chained transforms.
+
+**Recommendation:** Accept the constraint. Make the phase model explicit. Users who need a fuzzy match output to feed a later rule should split across scripts.
+
+### transform() as Punctuation Source
+
+**Problem:** An LLM-powered `transform()` can add punctuation better than literal rules for many cases — it understands context, disambiguates "period" (punctuation vs. time period), handles run-on sentences, and infers punctuation that was never spoken.
+
+```typescript
+export async function transform(text: string, _config, context): Promise<string> {
+	return context.llm.generate({
+		prompt: `Add punctuation and capitalization. Do not change words:\n\n${text}`
+	});
+}
+```
+
+But `transform()` runs last (Phase 5), so compromise in Phases 2-4 never sees the punctuation it adds. And unlike literal rules, you can't hoist it earlier because it's arbitrary code.
+
+**This creates an ordering paradox:** The best punctuation source runs too late for NLP to benefit.
+
+**Solution:** Lean into script splitting. A script is a unit of coherent transforms that don't have internal ordering dependencies. Cross-cutting concerns (punctuation → vocabulary → NLP) go in separate scripts.
+
+```
+Script 1: "Punctuation"  (literal rules OR LLM transform)
+Script 2: "Vocabulary"    (fuzzy n-gram, POS-gated)
+Script 3: "Formality"     (NLP selectors, #Tag rules)
+Script 4: "Cleanup"       (whitespace normalization)
+```
+
+Each script runs its internal phases in fixed order. The pipeline runs scripts in user-chosen order. Explicit script ordering replaces complex within-script phase dependencies.
+
+### Script Ordering: Declared Dependencies vs. Heuristics
+
+**Problem:** Manual script ordering (drag to reorder) works for 3-5 scripts but gets fragile. Users may not realize "Vocabulary" should run after "Punctuation" for better POS accuracy.
+
+**Option A: Declared inputs/outputs**
+
+Scripts declare what they need and provide:
+
+```typescript
+export const meta = {
+	name: 'Custom Vocabulary',
+	needs: ['punctuated'],
+	provides: ['vocabulary-normalized']
+};
+```
+
+The runner can:
+
+- Validate ordering (warn if dependencies are violated)
+- Auto-sort (topological sort based on declared edges)
+- Explain failures ("POS accuracy reduced — 'Vocabulary' needs 'punctuated' input")
+
+**Challenge:** Requires a coordination protocol. A fixed vocabulary of property names (`punctuated`, `capitalized`, `vocabulary-normalized`, `fillers-removed`, `numbers-formatted`) works for bundled presets but creates governance overhead for community scripts. Someone writes `needs: ['punctuated']`, someone else writes `provides: ['has-punctuation']`, and nothing connects.
+
+**Option B: Inferred heuristics**
+
+The runner infers properties from script structure:
+
+- Exports `rules` with punctuation chars in replacements → likely provides punctuation
+- Uses `#Tag` selectors or `pos` gates → likely benefits from punctuated input
+- Has `capabilities: ['llm']` → likely slow, should run late
+
+The runner suggests ordering and warns about likely problems without requiring explicit declarations. More magic, zero coordination cost.
+
+**Option C: Coarse phase hints**
+
+Add a single `phase` field to `meta` — a coarse ordering bucket:
+
+```typescript
+export const meta = {
+	name: 'English Punctuation',
+	phase: 'early' // 'early' | 'main' | 'late'
+};
+```
+
+Three buckets:
+
+- `early` — normalization (punctuation, capitalization, basic cleanup)
+- `main` — vocabulary, NLP, domain transforms
+- `late` — final formatting, whitespace, delivery prep
+
+Within each phase, user-defined order. The runner auto-sorts by phase, then by user preference within phase.
+
+**Recommendation:** Start with **Option C** (phase hints). Simple, low coordination cost, covers 90% of ordering needs. Add **Option B** (heuristic warnings) for validation. Consider **Option A** (explicit DAG) later if the community demonstrates need and can coordinate on property names.
+
+### Merging `words` and `rules`
+
+**Current separation:**
+
+|                       | `rules`                   | `words`                      |
+| --------------------- | ------------------------- | ---------------------------- |
+| **Input matching**    | Exact (literal/regex/NLP) | Fuzzy (n-gram + Levenshtein) |
+| **Output**            | Arbitrary replacement     | Canonical spelling (the key) |
+| **Pipeline position** | First                     | Second                       |
+
+**Observation:** With POS gates added to `words` and fuzzy matching being phase-aware, the distinction blurs. They're both "match → replace" with different matching strategies.
+
+**Unified model:**
+
+```typescript
+export const rules = {
+	// Simple literal → replacement (current behavior)
+	comma: ',',
+
+	// Fuzzy match → canonical spelling (currently `words`)
+	ChatGPT: { fuzzy: 'exact' },
+
+	// Fuzzy match → different replacement (new capability)
+	'full stop': { fuzzy: 'close', replace: '.' },
+
+	// Fuzzy match + POS constraint
+	Svelte: { fuzzy: 'close', pos: '#Noun' },
+
+	// NLP selector (unchanged)
+	'#Filler': ''
+};
+```
+
+A "preferred word" is just a rule with `fuzzy` set and no `replace` (defaults to the key itself). The sliding-window machinery activates when `fuzzy` is present.
+
+**Pros:**
+
+- One concept, not two. Simpler mental model.
+- Solves pipeline-order problem (no "words runs after rules but I need it before").
+- One GUI table, not two. Users don't decide which bucket a correction belongs in.
+- Enables fuzzy matching with custom replacement (the "full stop" → "." case).
+
+**Cons:**
+
+- `rules` processing becomes more complex — every entry potentially needs the sliding-window machinery.
+- Performance: runner must partition entries into fast-path (literal/regex) and slow-path (fuzzy) at compile time.
+- The `words` export is easy to explain: "words you want spelled correctly." Merging into `rules` makes the simple case slightly less discoverable.
+
+**Recommendation:** Merge at the engine level. A `fuzzy` option on any rule activates n-gram matching. But keep `words` as syntactic sugar — the runner desugars it into rules with `fuzzy` set and no `replace`. In the GUI, show two tabs ("Rules" and "Vocabulary") that map to the same underlying data. The "Vocabulary" tab hides the replace column (defaults to key). Power users can see the unified view.
+
+**Result:**
+
+- Simple case stays simple (`words` export, vocabulary GUI tab)
+- Power case is possible (fuzzy rule with custom replacement, POS gate)
+- No pipeline-order problem (everything is ordered together within phases)
+- One matching engine, partitioned internally for performance
+
+---
+
 ## Appendix: Common Replacement Rules
 
 Collected from [Handy PR #455](https://github.com/cjpais/Handy/pull/455) user requests, the [Handy English punctuation preset](https://github.com/user-attachments/files/24177105/handy-replacements-english.punctuation-v1.0.json), and [Microsoft Dictation](https://support.microsoft.com/en-gb/office/dictate-your-documents-in-word-3876e05f-3fcc-418f-b8ab-db7ce0d11d3c) commands. This is the de facto standard that users expect from spoken punctuation.

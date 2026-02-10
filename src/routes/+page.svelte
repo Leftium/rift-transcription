@@ -170,8 +170,11 @@
 		<section class="level">
 			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
 			<p class="level-desc">
-				Full experience. 3-axis rendering: underline (uncommitted), italic (unstable), opacity
-				(confidence).
+				Full experience. 3 dimensions of transcription:
+				<span class="desc-composing">composing</span>,
+				<span class="desc-unstable">unstable</span>,
+				<span class="desc-high">high</span> and
+				<span class="desc-low">low</span> confidence.
 			</p>
 			<div class="level-toggles">
 				<label>
@@ -274,6 +277,25 @@
 		color: #888;
 		font-size: 13px;
 		margin: 0 0 6px;
+	}
+
+	/* Styled labels mirroring the 3 transcription dimensions */
+	.desc-composing {
+		text-decoration: underline dotted #bbb;
+		font-weight: 600;
+	}
+	.desc-unstable {
+		text-decoration: underline dotted #bbb;
+		font-style: italic;
+		font-weight: 600;
+	}
+	.desc-high {
+		color: oklch(0.6 0.104 185);
+		font-weight: 600;
+	}
+	.desc-low {
+		color: oklch(0.666 0.157 58);
+		font-weight: 600;
 	}
 
 	.level-toggles {

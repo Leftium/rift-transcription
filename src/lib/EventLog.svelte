@@ -8,12 +8,16 @@
 			const t = detail;
 			const conf = t.confidence != null ? ` ${(t.confidence * 100).toFixed(0)}%` : '';
 			if (t.isFinal) {
-				gg(
+				gg.ns(
+					'rift:transcription:final',
 					bg('#f0f8f0').fg('#2e7d32').bold()`final` +
 						bg('#f0f8f0').fg('#2e7d32')` seg=${t.segmentId} "${t.text}"${conf}`
 				);
 			} else {
-				gg(fg('#888').bold()`interim` + fg('#888')` seg=${t.segmentId} "${t.text}"${conf}`);
+				gg.ns(
+					'rift:transcription:interim',
+					fg('#888').bold()`interim` + fg('#888')` seg=${t.segmentId} "${t.text}"${conf}`
+				);
 			}
 		}
 

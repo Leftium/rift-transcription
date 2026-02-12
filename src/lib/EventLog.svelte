@@ -8,9 +8,12 @@
 			const t = detail;
 			const conf = t.confidence != null ? ` ${(t.confidence * 100).toFixed(0)}%` : '';
 			if (t.isFinal) {
-				gg(bg('#f0f8f0').fg('#2e7d32')`final seg=${t.segmentId} "${t.text}"${conf}`);
+				gg(
+					bg('#f0f8f0').fg('#2e7d32').bold()`final` +
+						bg('#f0f8f0').fg('#2e7d32')` seg=${t.segmentId} "${t.text}"${conf}`
+				);
 			} else {
-				gg(fg('#888')`interim seg=${t.segmentId} "${t.text}"${conf}`);
+				gg(fg('#888').bold()`interim` + fg('#888')` seg=${t.segmentId} "${t.text}"${conf}`);
 			}
 		}
 

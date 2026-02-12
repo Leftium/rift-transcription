@@ -36,7 +36,7 @@
 		"vite-plugin-devtools-json": "^1.0.0"
 	},
 	"dependencies": {
-		"@leftium/gg": "^0.0.38",
+		"@leftium/gg": "^0.0.39",
 		"wellcrafted": "^0.29.1"
 	}
 }

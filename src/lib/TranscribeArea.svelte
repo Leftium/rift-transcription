@@ -196,7 +196,7 @@
 		if (debug) {
 			const data = `final=${transcript.isFinal} ep=${transcript.isEndpoint} seg=${transcript.segmentId} "${transcript.text}" val=${value.length} interims=${interims.size} ins=${insertionStart}..${insertionEnd}`;
 			gg.ns(
-				'rift:transcription:transcript',
+				'rift-transcription:TranscribeArea:transcript',
 				ggTranscript.bold()`transcript` + ggTranscript` ${data}`
 			);
 		}
@@ -319,7 +319,7 @@
 
 		if (debug) {
 			const data = `rawLen=${rawValue.length} val=${value.length} interims=${interims.size} snippet="${rawValue.slice(-40)}" trusted=${e.isTrusted} type=${(e as unknown as InputEvent).inputType}`;
-			gg.ns('rift:transcription:input', ggInput.bold()`input` + ggInput` ${data}`);
+			gg.ns('rift-transcription:TranscribeArea:input', ggInput.bold()`input` + ggInput` ${data}`);
 		}
 
 		// User typed while interims were active — interims are implicitly

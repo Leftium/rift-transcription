@@ -2,7 +2,7 @@
 	import TranscribeArea from '$lib/TranscribeArea.svelte';
 	import { transcribable } from '$lib/transcribable.js';
 	import CopyButton from '$lib/CopyButton.svelte';
-	import EventLog from '$lib/EventLog.svelte';
+
 	import { VoiceInputController } from '$lib/VoiceInputController.svelte';
 	import { broadcastTranscript } from '$lib/types.js';
 	import type { Transcript } from '$lib/types.js';
@@ -227,8 +227,6 @@
 			<CopyButton value={value0} />
 		</section>
 	</div>
-
-	<EventLog />
 </main>
 
 <style>

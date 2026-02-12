@@ -3,6 +3,7 @@
 	import type { HTMLTextareaAttributes } from 'svelte/elements';
 	import type { Transcript, TranscriptEvent, Word } from '$lib/types.js';
 	import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
+	import { gg, fg, bg } from '@leftium/gg';
 
 	interface Props extends HTMLTextareaAttributes {
 		value?: string;
@@ -28,28 +29,9 @@
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
 	let containerEl: HTMLElement | undefined = $state();
 
-	type DebugEntry = { id: number; time: string; source: string; data: Record<string, unknown> };
-	let debugLog: DebugEntry[] = $state([]);
-	let nextDebugId = 0;
-
-	function debugPush(source: string, data: Record<string, unknown>) {
-		if (!debug) return;
-		debugLog = [
-			{
-				id: nextDebugId++,
-				time: new Date().toLocaleTimeString('en-US', {
-					hour12: false,
-					hour: '2-digit',
-					minute: '2-digit',
-					second: '2-digit',
-					fractionalSecondDigits: 3
-				}),
-				source,
-				data
-			},
-			...debugLog
-		].slice(0, 100);
-	}
+	// Color schemes for gg() debug logging (match old debug log backgrounds)
+	const ggTranscript = bg('#f3e5f5'); // light purple
+	const ggInput = bg('#fff8e1'); // light amber
 
 	type InterimSegment = {
 		text: string;
@@ -211,16 +193,10 @@
 	// --- Transcript handling (internal) ---
 
 	function handleTranscript(transcript: Transcript): void {
-		debugPush('transcript', {
-			isFinal: transcript.isFinal,
-			isEndpoint: transcript.isEndpoint,
-			seg: transcript.segmentId,
-			text: transcript.text,
-			valueLen: value.length,
-			interims: interims.size,
-			insStart: insertionStart,
-			insEnd: insertionEnd
-		});
+		if (debug) {
+			const data = `final=${transcript.isFinal} ep=${transcript.isEndpoint} seg=${transcript.segmentId} "${transcript.text}" val=${value.length} interims=${interims.size} ins=${insertionStart}..${insertionEnd}`;
+			gg(ggTranscript`transcript ${data}`);
+		}
 
 		if (transcript.isEndpoint) {
 			// Reject finals for speech that was already baked into value
@@ -338,14 +314,10 @@
 
 		const rawValue = e.currentTarget.value;
 
-		debugPush('input', {
-			rawLen: rawValue.length,
-			valueLen: value.length,
-			interims: interims.size,
-			snippet: rawValue.slice(-40),
-			isTrusted: e.isTrusted,
-			inputType: (e as unknown as InputEvent).inputType
-		});
+		if (debug) {
+			const data = `rawLen=${rawValue.length} val=${value.length} interims=${interims.size} snippet="${rawValue.slice(-40)}" trusted=${e.isTrusted} type=${(e as unknown as InputEvent).inputType}`;
+			gg(ggInput`input ${data}`);
+		}
 
 		// User typed while interims were active — interims are implicitly
 		// committed (the textarea DOM already contains them baked into the
@@ -474,19 +446,6 @@
 				{/each}
 			</div>
 		{/if}
-		<div class="ta-debug-log">
-			{#each debugLog as entry (entry.id)}
-				<div
-					class="ta-debug-entry"
-					class:is-input={entry.source === 'input'}
-					class:is-transcript={entry.source === 'transcript'}
-				>
-					<span class="ta-debug-time">{entry.time}</span>
-					<span class="ta-debug-src">{entry.source}</span>
-					<span class="ta-debug-data">{JSON.stringify(entry.data)}</span>
-				</div>
-			{/each}
-		</div>
 	</details>
 {/if}
 
@@ -667,36 +626,5 @@
 		display: block;
 		padding-left: 8px;
 		color: #888;
-	}
-	.ta-debug-log {
-		max-height: 200px;
-		overflow-y: auto;
-	}
-	.ta-debug-entry {
-		display: flex;
-		gap: 6px;
-		padding: 1px 0;
-		border-bottom: 1px solid #f5f5f5;
-		white-space: nowrap;
-	}
-	.ta-debug-entry.is-input {
-		background: #fff8e1;
-	}
-	.ta-debug-entry.is-transcript {
-		background: #f3e5f5;
-	}
-	.ta-debug-time {
-		color: #999;
-		flex-shrink: 0;
-	}
-	.ta-debug-src {
-		width: 72px;
-		flex-shrink: 0;
-		font-weight: 600;
-	}
-	.ta-debug-data {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		color: #555;
 	}
 </style>

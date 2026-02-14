@@ -9,6 +9,9 @@
 
 	import { onMount, tick } from 'svelte';
 
+	// Page title
+	const pageTitle = 'RIFT: Realtime Interactive Fluid Transcription';
+
 	const voice = new VoiceInputController();
 
 	let value0 = $state('');
@@ -323,6 +326,10 @@
 		}
 	}
 </script>
+
+<svelte:head>
+	<title>{pageTitle}</title>
+</svelte:head>
 
 <main>
 	<h1>RIFT TranscriptArea</h1>

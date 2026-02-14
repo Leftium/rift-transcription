@@ -2,11 +2,13 @@
 	const codeBlocks: Record<string, string> = {
 		install: `pip install rift-local[sherpa,moonshine]`,
 		serve: `rift-local serve`,
-		'serve-sherpa': `rift-local serve --model zipformer-en-kroko`,
+		'serve-sherpa': `rift-local serve --asr zipformer-en-kroko`,
+		'serve-moonshine-small': `rift-local serve --asr moonshine-en-small`,
 		list: `rift-local list`
 	};
 
 	let copiedId = $state('');
+	let showAdvanced = $state(false);
 
 	async function copyCode(id: string) {
 		await navigator.clipboard.writeText(codeBlocks[id]);
@@ -25,23 +27,18 @@
 	<a href="/" class="back-link">&larr; Back to app</a>
 
 	<h1>Local Server Setup</h1>
-	<p class="intro">
-		RIFT supports local transcription servers for private, offline speech recognition.
-		<a href="https://github.com/Leftium/rift-local" target="_blank" rel="noopener">rift-local</a>
-		is the recommended option — it handles model downloads, server configuration, and supports multiple
-		backends.
-	</p>
+	<ul class="intro-bullets">
+		<li>
+			RIFT supports local servers for private offline transcription and even LLM transformations.
+		</li>
+		<li>
+			<a href="https://github.com/Leftium/rift-local" target="_blank" rel="noopener">rift-local</a>
+			is the recommended server: it handles model downloads, server configuration, and supports multiple
+			backends.
+		</li>
+	</ul>
 
-	<h2>rift-local (Recommended)</h2>
-
-	<p>
-		<a href="https://github.com/Leftium/rift-local" target="_blank" rel="noopener">
-			github.com/Leftium/rift-local
-		</a>
-	</p>
-
-	<h3>Install</h3>
-	<p>Install with both backends (sherpa-onnx and moonshine):</p>
+	<h2>Quick Start</h2>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('install')}>
 			{copiedId === 'install' ? '✓' : 'Copy'}
@@ -49,8 +46,6 @@
 		<pre><code>{codeBlocks['install']}</code></pre>
 	</div>
 
-	<h3>Usage</h3>
-	<p>Start the server (default: moonshine-en-medium on port 2177):</p>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('serve')}>
 			{copiedId === 'serve' ? '✓' : 'Copy'}
@@ -58,20 +53,66 @@
 		<pre><code>{codeBlocks['serve']}</code></pre>
 	</div>
 
-	<p>Use a lighter sherpa-onnx model instead:</p>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('serve-sherpa')}>
-			{copiedId === 'serve-sherpa' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['serve-sherpa']}</code></pre>
-	</div>
+	<p class="quick-note">
+		That's it! The server will start on <code>ws://localhost:2177</code> using
+		<code>moonshine-en-medium</code>.
+	</p>
 
-	<p>List all available models:</p>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('list')}>
-			{copiedId === 'list' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['list']}</code></pre>
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="advanced-section">
+		<h3
+			class="collapsible-header"
+			onclick={() => (showAdvanced = !showAdvanced)}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					showAdvanced = !showAdvanced;
+				}
+			}}
+			role="button"
+			tabindex="0"
+		>
+			<span class="toggle-icon">{showAdvanced ? '▼' : '▶'}</span>
+			Advanced Usage
+		</h3>
+
+		{#if showAdvanced}
+			<div class="advanced-content">
+				<h4>Using Different Models</h4>
+				<p>Use a lighter sherpa-onnx model:</p>
+				<div class="code-block">
+					<button class="copy-btn" onclick={() => copyCode('serve-sherpa')}>
+						{copiedId === 'serve-sherpa' ? '✓' : 'Copy'}
+					</button>
+					<pre><code>{codeBlocks['serve-sherpa']}</code></pre>
+				</div>
+
+				<p>Use a smaller moonshine model:</p>
+				<div class="code-block">
+					<button class="copy-btn" onclick={() => copyCode('serve-moonshine-small')}>
+						{copiedId === 'serve-moonshine-small' ? '✓' : 'Copy'}
+					</button>
+					<pre><code>{codeBlocks['serve-moonshine-small']}</code></pre>
+				</div>
+
+				<h4>Listing Models</h4>
+				<p>See all available models:</p>
+				<div class="code-block">
+					<button class="copy-btn" onclick={() => copyCode('list')}>
+						{copiedId === 'list' ? '✓' : 'Copy'}
+					</button>
+					<pre><code>{codeBlocks['list']}</code></pre>
+				</div>
+
+				<p>
+					See the <a
+						href="https://github.com/Leftium/rift-local#readme"
+						target="_blank"
+						rel="noopener">rift-local README</a
+					> for more options.
+				</p>
+			</div>
+		{/if}
 	</div>
 
 	<h3>Available Models</h3>
@@ -134,10 +175,9 @@
 		</tbody>
 	</table>
 
-	<h2>Alternative</h2>
+	<h2>Alternative Server (without Python)</h2>
 	<p>
-		For manual sherpa-onnx C++ server setup (without Python), see the
-		<a href="/sherpa">standalone sherpa-onnx setup guide</a>.
+		See the <a href="/sherpa">sherpa-onnx C++ server setup guide</a>.
 	</p>
 </main>
 
@@ -166,7 +206,23 @@
 
 	h1 {
 		font-size: 1.3rem;
-		margin-bottom: 4px;
+		margin-bottom: 12px;
+	}
+
+	.intro-bullets {
+		font-size: 14px;
+		line-height: 1.6;
+		color: #555;
+		margin: 0 0 16px;
+		padding-left: 20px;
+	}
+
+	.intro-bullets li {
+		margin-bottom: 8px;
+	}
+
+	.intro-bullets a {
+		color: #4a90d9;
 	}
 
 	h2 {
@@ -280,5 +336,55 @@
 
 	tr:last-child td {
 		border-bottom: none;
+	}
+
+	.quick-note {
+		color: #666;
+		font-size: 13px;
+		margin: 12px 0 24px;
+		font-style: italic;
+	}
+
+	.advanced-section {
+		margin: 24px 0;
+		border: 1px solid #e0e0e0;
+		border-radius: 6px;
+		padding: 0;
+		background: #fafafa;
+	}
+
+	.collapsible-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		cursor: pointer;
+		user-select: none;
+		padding: 12px 16px;
+		margin: 0;
+		font-size: 0.95rem;
+		transition: background 0.15s;
+	}
+
+	.collapsible-header:hover {
+		background: #f0f0f0;
+	}
+
+	.toggle-icon {
+		font-size: 0.7em;
+		color: #999;
+		transition: transform 0.2s;
+	}
+
+	.advanced-content {
+		padding: 0 16px 16px;
+	}
+
+	.advanced-content h4 {
+		margin-top: 16px;
+		margin-bottom: 8px;
+	}
+
+	.advanced-content h4:first-child {
+		margin-top: 0;
 	}
 </style>

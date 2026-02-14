@@ -2,7 +2,7 @@
 	const codeBlocks: Record<string, string> = {
 		install: `pip install rift-local[sherpa,moonshine]`,
 		serve: `rift-local serve`,
-		'serve-sherpa': `rift-local serve --model nemotron-streaming-en`,
+		'serve-sherpa': `rift-local serve --model zipformer-kroko-en`,
 		list: `rift-local list`
 	};
 
@@ -58,7 +58,7 @@
 		<pre><code>{codeBlocks['serve']}</code></pre>
 	</div>
 
-	<p>Use a sherpa-onnx model instead:</p>
+	<p>Use a lighter sherpa-onnx model instead:</p>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('serve-sherpa')}>
 			{copiedId === 'serve-sherpa' ? '✓' : 'Copy'}
@@ -82,6 +82,7 @@
 			<tr>
 				<th>Model</th>
 				<th>Params</th>
+				<th>Disk</th>
 				<th>Notes</th>
 			</tr>
 		</thead>
@@ -89,17 +90,14 @@
 			<tr>
 				<td><code>nemotron-streaming-en</code></td>
 				<td>0.6B</td>
-				<td>Best accuracy</td>
+				<td>600MB</td>
+				<td>Best accuracy (int8)</td>
 			</tr>
 			<tr>
-				<td><code>zipformer-small-en</code></td>
+				<td><code>zipformer-kroko-en</code></td>
 				<td>~30M</td>
+				<td>68MB</td>
 				<td>Lightweight, fast</td>
-			</tr>
-			<tr>
-				<td><code>zipformer-bilingual-zh-en</code></td>
-				<td>~70M</td>
-				<td>Bilingual ZH+EN</td>
 			</tr>
 		</tbody>
 	</table>
@@ -110,24 +108,28 @@
 			<tr>
 				<th>Model</th>
 				<th>Params</th>
+				<th>Disk</th>
 				<th>Notes</th>
 			</tr>
 		</thead>
 		<tbody>
 			<tr>
-				<td><code>moonshine-tiny-en</code></td>
-				<td>34M</td>
-				<td>Fastest</td>
+				<td><code>moonshine-medium-en</code></td>
+				<td>245M</td>
+				<td>190MB</td>
+				<td>Default; best moonshine accuracy</td>
 			</tr>
 			<tr>
 				<td><code>moonshine-small-en</code></td>
 				<td>123M</td>
+				<td>95MB</td>
 				<td>Balanced</td>
 			</tr>
 			<tr>
-				<td><code>moonshine-medium-en</code></td>
-				<td>245M</td>
-				<td>Default; best moonshine accuracy</td>
+				<td><code>moonshine-tiny-en</code></td>
+				<td>34M</td>
+				<td>26MB</td>
+				<td>Fastest</td>
 			</tr>
 		</tbody>
 	</table>

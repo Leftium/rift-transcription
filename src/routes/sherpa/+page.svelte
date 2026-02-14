@@ -17,10 +17,10 @@ tar xf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2
 cp sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/{tokens.txt,encoder.int8.onnx,decoder.int8.onnx,joiner.int8.onnx} ~/.cache/rift-local/models/nemotron-streaming-en/
 rm -rf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14*`,
 
-		'model-zipformer-small': `mkdir -p ~/.cache/rift-local/models/zipformer-small-en && cd /tmp
+		'model-zipformer-small': `mkdir -p ~/.cache/rift-local/models/zipformer-kroko-en && cd /tmp
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
 tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
-cp sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/{tokens.txt,encoder.onnx,decoder.onnx,joiner.onnx} ~/.cache/rift-local/models/zipformer-small-en/
+cp sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/{tokens.txt,encoder.onnx,decoder.onnx,joiner.onnx} ~/.cache/rift-local/models/zipformer-kroko-en/
 rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 
 		'start-nemotron': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
@@ -36,10 +36,10 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
   --port=2177 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=${MODELS}/zipformer-small-en/tokens.txt \\
-  --encoder=${MODELS}/zipformer-small-en/encoder.onnx \\
-  --decoder=${MODELS}/zipformer-small-en/decoder.onnx \\
-  --joiner=${MODELS}/zipformer-small-en/joiner.onnx`
+  --tokens=${MODELS}/zipformer-kroko-en/tokens.txt \\
+  --encoder=${MODELS}/zipformer-kroko-en/encoder.onnx \\
+  --decoder=${MODELS}/zipformer-kroko-en/decoder.onnx \\
+  --joiner=${MODELS}/zipformer-kroko-en/joiner.onnx`
 	};
 
 	let copiedId = $state('');
@@ -152,14 +152,15 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 	</details>
 
 	<p>
-		For all available models:
+		For all available models, check the
 		<a
 			href="https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-transducer/index.html"
 			target="_blank"
 			rel="noopener"
 		>
 			online transducer models
-		</a>.
+		</a>
+		page or run <code>rift-local list</code>.
 	</p>
 
 	<h2>3. Server Flags</h2>

@@ -20,6 +20,30 @@
 	let lastFocusedTextarea: HTMLTextAreaElement | undefined = $state();
 	let replaying = $state(false);
 
+	// Replicates TranscribeArea's OKLCH confidence-to-color interpolation for the heading demo.
+	const TEAL = { L: 0.6, C: 0.104, H: 185 };
+	const AMBER = { L: 0.666, C: 0.157, H: 58 };
+	function confidenceToColor(confidence: number): string {
+		const L = AMBER.L + confidence * (TEAL.L - AMBER.L);
+		const C = AMBER.C + confidence * (TEAL.C - AMBER.C);
+		const H = AMBER.H + confidence * (TEAL.H - AMBER.H);
+		return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H.toFixed(1)})`;
+	}
+
+	// "High to low" — each visible character gets a confidence step from 1.0 → 0.0
+	const gradientText = 'high to low';
+	const gradientChars: Array<{ char: string; color: string | null }> = (() => {
+		const visible = [...gradientText].filter((c) => c !== ' ');
+		const total = visible.length; // 9 chars: h,i,g,h,t,o,l,o,w
+		let vi = 0;
+		return [...gradientText].map((char) => {
+			if (char === ' ') return { char, color: null };
+			const confidence = 1 - vi / (total - 1);
+			vi++;
+			return { char, color: confidenceToColor(confidence) };
+		});
+	})();
+
 	// -----------------------------------------------------------------------
 	// Replay recorded events — real-time playback of a captured session.
 	// Events are typed keystrokes and broadcastTranscript() calls replayed
@@ -398,8 +422,10 @@
 				Full experience. 3 dimensions of transcription:
 				<span class="desc-composing">composing</span>,
 				<span class="desc-unstable">unstable</span>,
-				<span class="desc-high">high</span> and
-				<span class="desc-low">low</span> confidence.
+				<span class="gradient-label"
+					>{#each gradientChars as { char, color }}{#if color}<span style:color>{char}</span
+							>{:else}{char}{/if}{/each}</span
+				> confidence.
 			</p>
 			<div class="level-toggles">
 				<label>
@@ -517,6 +543,9 @@
 	}
 	.desc-low {
 		color: oklch(0.666 0.157 58);
+		font-weight: 600;
+	}
+	.gradient-label {
 		font-weight: 600;
 	}
 

@@ -2,7 +2,7 @@
 	const codeBlocks: Record<string, string> = {
 		install: `pip install rift-local[sherpa,moonshine]`,
 		serve: `rift-local serve`,
-		'serve-sherpa': `rift-local serve --model zipformer-kroko-en`,
+		'serve-sherpa': `rift-local serve --model zipformer-en-kroko`,
 		list: `rift-local list`
 	};
 
@@ -50,7 +50,7 @@
 	</div>
 
 	<h3>Usage</h3>
-	<p>Start the server (default: moonshine-medium-en on port 2177):</p>
+	<p>Start the server (default: moonshine-en-medium on port 2177):</p>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('serve')}>
 			{copiedId === 'serve' ? '✓' : 'Copy'}
@@ -88,13 +88,13 @@
 		</thead>
 		<tbody>
 			<tr>
-				<td><code>nemotron-streaming-en</code></td>
+				<td><code>nemotron-en</code></td>
 				<td>0.6B</td>
 				<td>600MB</td>
 				<td>Best accuracy (int8)</td>
 			</tr>
 			<tr>
-				<td><code>zipformer-kroko-en</code></td>
+				<td><code>zipformer-en-kroko</code></td>
 				<td>~30M</td>
 				<td>68MB</td>
 				<td>Lightweight, fast</td>
@@ -114,19 +114,19 @@
 		</thead>
 		<tbody>
 			<tr>
-				<td><code>moonshine-medium-en</code></td>
+				<td><code>moonshine-en-medium</code></td>
 				<td>245M</td>
 				<td>190MB</td>
 				<td>Default; best moonshine accuracy</td>
 			</tr>
 			<tr>
-				<td><code>moonshine-small-en</code></td>
+				<td><code>moonshine-en-small</code></td>
 				<td>123M</td>
 				<td>95MB</td>
 				<td>Balanced</td>
 			</tr>
 			<tr>
-				<td><code>moonshine-tiny-en</code></td>
+				<td><code>moonshine-en-tiny</code></td>
 				<td>34M</td>
 				<td>26MB</td>
 				<td>Fastest</td>

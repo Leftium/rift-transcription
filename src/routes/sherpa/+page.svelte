@@ -11,35 +11,35 @@ cp -r sherpa-onnx-v1.12.23-osx-universal2-shared/lib .`,
 
 		quarantine: `xattr -r -d com.apple.quarantine ~/sherpa-onnx/`,
 
-		'model-nemotron': `mkdir -p ~/.cache/rift-local/models/nemotron-streaming-en && cd /tmp
+		'model-nemotron': `mkdir -p ~/.cache/rift-local/models/nemotron-en && cd /tmp
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2
 tar xf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2
-cp sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/{tokens.txt,encoder.int8.onnx,decoder.int8.onnx,joiner.int8.onnx} ~/.cache/rift-local/models/nemotron-streaming-en/
+cp sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/{tokens.txt,encoder.int8.onnx,decoder.int8.onnx,joiner.int8.onnx} ~/.cache/rift-local/models/nemotron-en/
 rm -rf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14*`,
 
-		'model-zipformer-small': `mkdir -p ~/.cache/rift-local/models/zipformer-kroko-en && cd /tmp
+		'model-zipformer-small': `mkdir -p ~/.cache/rift-local/models/zipformer-en-kroko && cd /tmp
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
 tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
-cp sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/{tokens.txt,encoder.onnx,decoder.onnx,joiner.onnx} ~/.cache/rift-local/models/zipformer-kroko-en/
+cp sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/{tokens.txt,encoder.onnx,decoder.onnx,joiner.onnx} ~/.cache/rift-local/models/zipformer-en-kroko/
 rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 
 		'start-nemotron': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
   --port=2177 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=${MODELS}/nemotron-streaming-en/tokens.txt \\
-  --encoder=${MODELS}/nemotron-streaming-en/encoder.int8.onnx \\
-  --decoder=${MODELS}/nemotron-streaming-en/decoder.int8.onnx \\
-  --joiner=${MODELS}/nemotron-streaming-en/joiner.int8.onnx`,
+  --tokens=${MODELS}/nemotron-en/tokens.txt \\
+  --encoder=${MODELS}/nemotron-en/encoder.int8.onnx \\
+  --decoder=${MODELS}/nemotron-en/decoder.int8.onnx \\
+  --joiner=${MODELS}/nemotron-en/joiner.int8.onnx`,
 
 		'start-zipformer-small': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
   --port=2177 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=${MODELS}/zipformer-kroko-en/tokens.txt \\
-  --encoder=${MODELS}/zipformer-kroko-en/encoder.onnx \\
-  --decoder=${MODELS}/zipformer-kroko-en/decoder.onnx \\
-  --joiner=${MODELS}/zipformer-kroko-en/joiner.onnx`
+  --tokens=${MODELS}/zipformer-en-kroko/tokens.txt \\
+  --encoder=${MODELS}/zipformer-en-kroko/encoder.onnx \\
+  --decoder=${MODELS}/zipformer-en-kroko/decoder.onnx \\
+  --joiner=${MODELS}/zipformer-en-kroko/joiner.onnx`
 	};
 
 	let copiedId = $state('');

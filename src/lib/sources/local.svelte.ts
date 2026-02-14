@@ -111,7 +111,7 @@ export class LocalSource implements TranscriptionSource {
 	private static readonly MAX_RESTART_ATTEMPTS = 5;
 	private static readonly RESTART_DELAY_MS = 300;
 
-	constructor(serverUrl: string = 'ws://localhost:6006') {
+	constructor(serverUrl: string = 'ws://localhost:2177') {
 		this.serverUrl = serverUrl;
 		this.audioCapture = new AudioCapture();
 	}

@@ -26,7 +26,7 @@ export class VoiceInputController {
 
 	enabled = $state(false);
 	sourceType = $state<SourceType>('web-speech');
-	localUrl = $state('ws://localhost:6006');
+	localUrl = $state('ws://localhost:2177');
 	deepgramApiKey = $state('');
 
 	get listening(): boolean {

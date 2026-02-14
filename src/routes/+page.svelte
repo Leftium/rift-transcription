@@ -354,7 +354,7 @@
 					type="text"
 					class="server-url"
 					bind:value={voice.localUrl}
-					placeholder="ws://localhost:6006"
+					placeholder="ws://localhost:2177"
 					size="24"
 				/>
 				<a href="/local-setup" class="setup-link">Setup</a>
@@ -393,6 +393,11 @@
 						: voice.sourceType === 'deepgram'
 							? 'Deepgram'
 							: 'Web Speech'}
+					{#if voice.serverInfo}
+						<span class="server-info" title={voice.serverInfo.backend}
+							>({voice.serverInfo.model_display})</span
+						>
+					{/if}
 				{:else}
 					Idle
 				{/if}
@@ -652,6 +657,11 @@
 		gap: 6px;
 		font-size: 13px;
 		color: #666;
+	}
+
+	.server-info {
+		color: #999;
+		font-size: 12px;
 	}
 
 	.dot {

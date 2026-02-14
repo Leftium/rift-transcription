@@ -9,7 +9,7 @@ export default defineConfig({
 		allowedHosts: ['.ngrok-free.app'],
 		proxy: {
 			'/ws/local': {
-				target: 'ws://localhost:6006',
+				target: 'ws://localhost:2177',
 				ws: true,
 				rewriteWsOrigin: true
 			}

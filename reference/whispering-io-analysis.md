@@ -211,25 +211,28 @@ For future real-time transcription support, here's a comparison of streaming-cap
 
 ### Cloud Streaming Providers
 
-| Provider              | Streaming | Price/hr        | Languages          | Timestamps | Protocol       | Notes                                        |
-| --------------------- | --------- | --------------- | ------------------ | ---------- | -------------- | -------------------------------------------- |
-| **Deepgram**          | Yes       | $0.46           | 30+                | Word-level | WebSocket      | Best balance of price/features               |
-| **AssemblyAI**        | Yes       | $0.65 streaming | 99+                | Word-level | WebSocket      | Best batch pricing ($0.15/hr)                |
-| **Gradium**           | Yes       | $0.54-1.00      | 5 (en/fr/de/es/pt) | Word-level | WebSocket      | Semantic VAD, code-switching, integrated TTS |
-| **Google Cloud**      | Yes       | Variable        | 125+               | Word-level | gRPC/WebSocket | Complex pricing                              |
-| **Azure Speech**      | Yes       | $1.00           | 100+               | Word-level | WebSocket      | Enterprise-focused                           |
-| **OpenAI Realtime**   | Yes       | $0.18-0.36      | ~50                | Word-level | WebSocket      | Newest, GPT-4o based                         |
-| **ElevenLabs Scribe** | Yes       | $0.28+          | 90+                | Word-level | WebSocket      | 150ms latency, predictive transcription      |
+| Provider              | Streaming | Price/hr        | Languages          | Timestamps | Monotonic^1^ | Protocol       | Notes                                        |
+| --------------------- | --------- | --------------- | ------------------ | ---------- | ------------ | -------------- | -------------------------------------------- |
+| **Deepgram**          | Yes       | $0.46           | 30+                | Word-level | No           | WebSocket      | Best balance of price/features               |
+| **AssemblyAI**        | Yes       | $0.65 streaming | 99+                | Word-level | ?            | WebSocket      | Best batch pricing ($0.15/hr)                |
+| **Gradium**           | Yes       | $0.54-1.00      | 5 (en/fr/de/es/pt) | Word-level | ?            | WebSocket      | Semantic VAD, code-switching, integrated TTS |
+| **Google Cloud**      | Yes       | Variable        | 125+               | Word-level | ?            | gRPC/WebSocket | Complex pricing                              |
+| **Azure Speech**      | Yes       | $1.00           | 100+               | Word-level | ?            | WebSocket      | Enterprise-focused                           |
+| **OpenAI Realtime**   | Yes       | $0.18-0.36      | ~50                | Word-level | ?            | WebSocket      | Newest, GPT-4o based                         |
+| **ElevenLabs Scribe** | Yes       | $0.28+          | 90+                | Word-level | ?            | WebSocket      | 150ms latency, predictive transcription      |
 
 ### Browser/Local Options
 
-| Provider               | Streaming | Price | Languages | Timestamps | Notes                               |
-| ---------------------- | --------- | ----- | --------- | ---------- | ----------------------------------- |
-| **Web Speech API**     | Yes       | Free  | Many      | **No**     | Browser-only, no timestamps         |
-| **Vosk**               | Yes       | Free  | 20+       | Word-level | WASM available, true streaming      |
-| **sherpa-onnx**        | Yes       | Free  | 20+       | Word-level | WASM + native, true streaming       |
-| **Whisper.cpp stream** | Fake      | Free  | 99        | Word-level | Chunked batch with sliding window   |
-| **WhisperLiveKit**     | Fake      | Free  | 99        | Word-level | Smart chunking with AlignAtt policy |
+| Provider               | Streaming | Price | Languages        | Timestamps    | Monotonic^1^ | Notes                                           |
+| ---------------------- | --------- | ----- | ---------------- | ------------- | ------------ | ----------------------------------------------- |
+| **Web Speech API**     | Yes       | Free  | Many             | **No**        | No           | Browser-only, no timestamps                     |
+| **Vosk**               | Yes       | Free  | 20+              | Word-level    | ?            | WASM available, true streaming                  |
+| **sherpa-onnx**        | Yes       | Free  | 20+              | Word-level    | **Yes**      | WASM + native, true streaming                   |
+| **Moonshine v2**       | Yes       | Free  | 8 (EN streaming) | Segment-level | No           | Built-in diarization + VAD + intent recognition |
+| **Whisper.cpp stream** | Fake      | Free  | 99               | Word-level    | N/A          | Chunked batch with sliding window               |
+| **WhisperLiveKit**     | Fake      | Free  | 99               | Word-level    | N/A          | Smart chunking with AlignAtt policy             |
+
+^1^**Monotonic** = interim results are append-only (earlier tokens/words are never revised). "No" means interims may be revised. "?" means not confirmed. "N/A" means no true streaming (chunked batch).
 
 ### Batch-Only (No Streaming)
 
@@ -370,9 +373,68 @@ _Note: These are ElevenLabs' own benchmarks; independent verification recommende
 - Higher price point than Deepgram ($0.28 vs $0.46/hr) but claims better accuracy
 - Good fit if already using ElevenLabs for TTS
 
+### Moonshine v2 Streaming Details
+
+**Overview:** Open-source streaming ASR toolkit from Moonshine AI (formerly UsefulSensors). A batteries-included C++ library with diarization, VAD, and intent recognition built in. Models are the smallest available at competitive accuracy — Medium (245M params) beats Whisper Large v3 (1.5B) on the Open ASR Leaderboard.
+
+**Architecture:** Encoder-decoder Transformer with a sliding-window streaming encoder (80ms lookahead) and autoregressive decoder. The encoder processes audio incrementally and caches state — genuinely streaming, not chunked batch. The decoder runs at each update/endpoint.
+
+**Models:**
+
+| Model  | Params | WER    | Latency (M3 CPU) |
+| ------ | ------ | ------ | ---------------- |
+| Tiny   | 34M    | 12.00% | 50ms             |
+| Small  | 123M   | 7.84%  | 148ms            |
+| Medium | 245M   | 6.65%  | 258ms            |
+
+**Key Features:**
+
+| Feature            | Details                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| Latency            | 50-258ms end-of-speech to result (CPU)                     |
+| Languages          | 8 (EN streaming; AR, JA, KO, ZH, ES, UK, VI non-streaming) |
+| Timestamps         | Segment-level (`start_time`, `duration`) — no word-level   |
+| Diarization        | Built-in (`speaker_id` on `LineCompleted`)                 |
+| VAD                | Built-in                                                   |
+| Intent recognition | Built-in (semantic fuzzy matching via Gemma 300M)          |
+| Interims           | Non-monotonic — text may be revised before `LineCompleted` |
+| Protocol           | Native C++ library; Python/Swift/Java/C++ bindings         |
+| Audio format       | Raw 16kHz mono                                             |
+| License            | MIT                                                        |
+
+**Unique Capabilities:**
+
+- **Speaker diarization built in** — no external library needed, works in real-time
+- **Intent recognition** — register action phrases, get callbacks on semantic matches (e.g., "Turn on the lights" triggered by "Let there be light" at 76% confidence)
+- **Cross-platform from single C++ core** — Python (pip: `moonshine-voice`), iOS (SPM), Android (Maven), Windows (C++), Linux, Raspberry Pi
+- **Smallest competitive models** — Tiny at 34M params runs at 50ms latency on laptop CPU
+
+**Limitations:**
+
+- **No WebSocket server** — designed for native integration. Browser use requires a Python WebSocket bridge or future WASM build.
+- **No word-level timestamps** — only segment-level, so per-word confidence coloring unavailable
+- **Non-monotonic interims** — text revision behavior similar to Web Speech API
+- **English-only streaming** — other languages only have non-streaming v1 models
+- **No GPU batch optimization** — single-stream, on-device focus
+
+**Relevance to Whispering:**
+
+1. **Desktop local transcription:** Bundle Moonshine Tiny/Small for out-of-box local transcription with diarization — smaller than current Nemotron/Parakeet models
+2. **Speaker identification:** Built-in diarization is unique among local models — could enable speaker-labeled transcripts without cloud APIs
+3. **Intent recognition:** Could power voice command features (e.g., "stop recording", "new paragraph") via semantic matching rather than exact string matching
+4. **Privacy:** Complete offline operation with very small model footprint
+5. **Integration:** Already listed in Whispering's model files table; sherpa-rs could potentially load Moonshine ONNX models
+
+**References:**
+
+- [HuggingFace: UsefulSensors/moonshine-streaming](https://huggingface.co/UsefulSensors/moonshine-streaming)
+- [GitHub: moonshine-ai/moonshine](https://github.com/moonshine-ai/moonshine)
+- [Moonshine v2 paper (arXiv:2602.12241)](https://arxiv.org/abs/2602.12241)
+
 ### Recommendation for Whispering
 
 **Primary:** Deepgram - best price/features balance, proven reliability
 **Alternative:** AssemblyAI - if batch pricing is priority
 **Future consideration:** Gradium - if TTS integration needed
-**Local/Privacy:** sherpa-onnx - best path for zero-config offline transcription on both desktop and web
+**Local/Privacy:** sherpa-onnx - best path for zero-config offline transcription on both desktop and web (monotonic interims, word-level timestamps)
+**Local/Diarization:** Moonshine v2 - best path for offline transcription with built-in speaker identification, smallest models, intent recognition

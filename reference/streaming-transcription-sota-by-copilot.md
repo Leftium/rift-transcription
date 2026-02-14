@@ -377,9 +377,91 @@ Omnilingual ASR is a groundbreaking open-source system supporting **1,600+ langu
 - **Deployment:** Open-source, with models ranging from 300M to 7B parameters.
 - **Streaming:** LLM-based models support streaming with near real-time performance.
 
-### 6.6. Moonshine, Wav2Vec 2.0, and Others
+### 6.6. Moonshine v2 Streaming (Moonshine AI / UsefulSensors)
 
-- **Moonshine:** Targets edge and mobile deployment with models as small as 27M parameters.
+Moonshine v2 is a family of streaming ASR models from Moonshine AI (formerly UsefulSensors, founded by Pete Warden ex-Google TensorFlow). The models are purpose-built for real-time voice interfaces on edge devices, with a novel architecture that enables genuine streaming with very low latency on CPU hardware.
+
+**Architecture:**
+
+Moonshine v2 uses an **encoder-decoder Transformer** (like Whisper in broad strokes) but with critical architectural changes:
+
+- **Encoder:** Sliding-window self-attention with bounded lookahead (80ms). The encoder is **ergodic** (no positional embeddings), making it translation-invariant in time. Window config uses `(16, 4)` for boundary layers (16 frames left context, 4 frames right = 80ms lookahead) and `(16, 0)` for intermediate layers (strictly causal). This makes encoder cost **linear O(Tw)** instead of Whisper's quadratic O(T^2).
+- **Decoder:** Standard causal Transformer with RoPE and SwiGLU FFN. Still autoregressive (generates tokens sequentially). The paper acknowledges CTC/RNN-T decoders as future work.
+- **Audio frontend:** 50Hz feature rate, non-overlapping 80-sample windows, CMVN normalization, asinh nonlinearity, two causal stride-2 convolutions. Processes raw 16kHz waveform (no Mel spectrogram).
+- **Adapter:** Bridges encoder to decoder by adding learned positional embeddings to the position-free encoder outputs.
+
+**Streaming mechanism:**
+
+The encoder processes audio **incrementally as it arrives**, caching previous computations. When new audio frames arrive, only the new frames are processed — previously computed states are reused. The encoder emits _provisional_ representations immediately; as more audio provides right context, provisional states are replaced with finalized ones. This is **genuinely streaming at the encoder level** — not chunked batch. However, the decoder still runs as a batch pass at each update/endpoint.
+
+**Latency (measured on Apple MacBook M3 CPU):**
+
+| Model                      | Response Latency | Compute Load |
+| -------------------------- | ---------------- | ------------ |
+| Moonshine v2 Tiny (34M)    | 50ms             | 8.0%         |
+| Moonshine v2 Small (123M)  | 148ms            | 18.0%        |
+| Moonshine v2 Medium (245M) | 258ms            | 29.0%        |
+
+Response latency = time from end-of-speech detection (VAD) to transcript delivery. Compare: Whisper Large v3 (1.5B) takes 11,286ms on the same hardware.
+
+**Accuracy (HuggingFace Open ASR Leaderboard):**
+
+| Model               | Params | Avg WER |
+| ------------------- | ------ | ------- |
+| Moonshine v2 Medium | 245M   | 6.65%   |
+| Moonshine v2 Small  | 123M   | 7.84%   |
+| Moonshine v2 Tiny   | 34M    | 12.00%  |
+
+Moonshine v2 Medium **beats Whisper Large v3 (7.44% WER)** with 6x fewer parameters.
+
+**Key features:**
+
+- **Built-in VAD:** Integrated voice activity detection for segmenting speech.
+- **Built-in diarization:** Speaker identification included in the library. `LineCompleted` events include `speaker_id`.
+- **Built-in intent recognition:** Semantic fuzzy matching using Gemma 300M sentence embeddings. Register action phrases, get callbacks on matches with confidence scores.
+- **Event-based API:** `LineStarted` / `LineTextChanged` / `LineCompleted` events with `TranscriptLine` data (text, `start_time`, `duration`, `speaker_id`).
+- **Monotonic interims:** No — interim text **may be revised** as more audio context arrives. `LineTextChanged` events can update previously emitted text. Only `LineCompleted` text is final and guaranteed stable.
+
+**Language support:**
+
+| Language   | Model Variants              | WER/CER     |
+| ---------- | --------------------------- | ----------- |
+| English    | Tiny/Small/Medium Streaming | 6.65-12.00% |
+| Arabic     | Base (non-streaming)        | 5.63%       |
+| Japanese   | Base (non-streaming)        | 13.62%      |
+| Korean     | Tiny (non-streaming)        | 6.46%       |
+| Mandarin   | Base (non-streaming)        | 25.76%      |
+| Spanish    | Base (non-streaming)        | 4.33%       |
+| Ukrainian  | Base (non-streaming)        | 14.55%      |
+| Vietnamese | Base (non-streaming)        | 8.82%       |
+
+Note: Only English currently has streaming (v2) model variants.
+
+**Deployment:**
+
+- **Cross-platform C++ core** using ONNX Runtime, with native bindings for Python (pip: `moonshine-voice`), iOS/macOS (Swift Package Manager), Android (Maven), Windows (C++), Linux, Raspberry Pi.
+- **Models on HuggingFace:** [UsefulSensors/moonshine-streaming](https://huggingface.co/UsefulSensors/moonshine-streaming) — ONNX models for Tiny/Small/Medium.
+- **No WebSocket server mode** — designed for native integration, not client-server. Browser deployment would require a WebSocket bridge or future WASM build.
+- **License:** MIT.
+
+**Limitations:**
+
+1. Decoder is still autoregressive — not fully streaming end-to-end (no CTC/RNN-T).
+2. Non-English streaming models not yet available.
+3. No word-level timestamps documented (only segment-level `start_time` + `duration`).
+4. Mandarin accuracy is weak (25.76% CER).
+5. Not optimized for GPU batch throughput — designed for single-stream, on-device use.
+6. No WebSocket server or WASM build — needs a bridge for browser-based applications.
+
+**References:**
+
+- [Moonshine v2 paper (arXiv:2602.12241)](https://arxiv.org/abs/2602.12241)
+- [Moonshine v1 paper (arXiv:2410.15608)](https://arxiv.org/abs/2410.15608)
+- [Flavors of Moonshine paper (arXiv:2509.02523)](https://arxiv.org/abs/2509.02523)
+- [GitHub: moonshine-ai/moonshine](https://github.com/moonshine-ai/moonshine)
+
+### 6.7. Wav2Vec 2.0 and Others
+
 - **Wav2Vec 2.0:** Pioneered self-supervised learning for ASR, strong for low-resource languages.
 - **Kaldi, ESPnet, SpeechBrain:** Remain popular for research and custom deployments, with support for streaming and batch ASR.
 
@@ -532,26 +614,32 @@ Reducing latency often comes at the cost of accuracy, as models have less contex
 
 ## 15. Comparison Table: Top Real-Time Streaming ASR Models and APIs (Early 2026)
 
-| Model/API               | Type        | Latency (ms) | WER (%) | Languages | Diarization | Domain Adaptation | Deployment Options       | Open Source | Price/min |
-| ----------------------- | ----------- | ------------ | ------- | --------- | ----------- | ----------------- | ------------------------ | ----------- | --------- |
-| **Soniox v4 RT**        | Commercial  | <100         | TBD\*\* | 60+       | Yes (RT)    | Context, Terms    | Cloud, Sovereign         | No          | $0.002    |
-| **Voxtral Realtime**    | Commercial  | <200         | ~4      | 13        | No\*\*\*    | Context (Batch)   | Cloud, Edge, Self-host   | **Yes**     | $0.006    |
-| Voxtral Mini V2 (batch) | Commercial  | N/A          | ~4      | 13        | Yes         | Context biasing   | Cloud, Edge, Self-host   | No          | $0.003    |
-| Deepgram Nova-3         | Commercial  | <300         | ~6.8    | 36+       | Add-on      | Keyterm, Custom   | Cloud, On-prem, Edge     | No          | ~$0.0045  |
-| ElevenLabs Scribe v2 RT | Commercial  | <150         | ~6.5    | 90+       | Optional    | Keyterm (Batch)   | Cloud API, Agents        | No          | ~$0.015   |
-| Sherpa-ONNX (Zipformer) | Open-source | 100–300      | ~4–6    | 10+       | Yes         | Prompt-tuning     | Self-hosted, Edge, WASM  | Yes         | Free      |
-| AssemblyAI Universal-2  | Commercial  | 300–600      | ~14.5   | 102       | Add-on      | Custom vocab      | Cloud API                | No          | ~$0.006   |
-| Google Chirp            | Commercial  | 200–500      | ~11.6   | 125+      | Yes         | Phrase hints      | Cloud, On-prem           | No          | ~$0.006   |
-| AWS Transcribe          | Commercial  | 200–400      | ~14     | 100+      | Add-on      | Custom vocab      | Cloud, Edge (Greengrass) | No          | ~$0.024   |
-| Microsoft Azure Speech  | Commercial  | 200–500      | ~17     | 100+      | Yes         | Phrase lists      | Cloud, On-device, Hybrid | No          | ~$0.016   |
-| Whisper Large V3        | Open-source | 200–500      | ~7.4    | 99+       | No\*        | Fine-tuning       | Self-hosted, Edge        | Yes         | Free      |
-| Canary Qwen 2.5B        | Open-source | 100–300      | ~5.6    | English   | No          | LLM decoder       | Self-hosted              | Yes         | Free      |
-| Omnilingual ASR         | Open-source | ~1000        | <10 CER | 1,600+    | No          | Zero-shot         | Self-hosted              | Yes         | Free      |
-| Parakeet TDT            | Open-source | <100         | ~8      | English   | No          | Fast streaming    | Self-hosted, Edge        | Yes         | Free      |
+| Model/API               | Type        | Latency (ms) | WER (%) | Languages | Diarization | Monotonic^4^ | Domain Adaptation | Deployment Options       | Open Source | Price/min |
+| ----------------------- | ----------- | ------------ | ------- | --------- | ----------- | ------------ | ----------------- | ------------------------ | ----------- | --------- |
+| **Soniox v4 RT**        | Commercial  | <100         | TBD\*\* | 60+       | Yes (RT)    | No           | Context, Terms    | Cloud, Sovereign         | No          | $0.002    |
+| **Voxtral Realtime**    | Commercial  | <200         | ~4      | 13        | No\*\*\*    | ?            | Context (Batch)   | Cloud, Edge, Self-host   | **Yes**     | $0.006    |
+| Voxtral Mini V2 (batch) | Commercial  | N/A          | ~4      | 13        | Yes         | N/A (batch)  | Context biasing   | Cloud, Edge, Self-host   | No          | $0.003    |
+| Deepgram Nova-3         | Commercial  | <300         | ~6.8    | 36+       | Add-on      | No           | Keyterm, Custom   | Cloud, On-prem, Edge     | No          | ~$0.0045  |
+| ElevenLabs Scribe v2 RT | Commercial  | <150         | ~6.5    | 90+       | Optional    | ?            | Keyterm (Batch)   | Cloud API, Agents        | No          | ~$0.015   |
+| Sherpa-ONNX (Zipformer) | Open-source | 100–300      | ~4–6    | 10+       | Yes         | **Yes**      | Prompt-tuning     | Self-hosted, Edge, WASM  | Yes         | Free      |
+| Sherpa-ONNX (Nemotron)  | Open-source | 100–300      | ~4–6    | English   | No          | **Yes**      | Prompt-tuning     | Self-hosted, Edge        | Yes         | Free      |
+| **Moonshine v2**        | Open-source | 50–258       | 6.65–12 | 8^5^      | **Yes**     | No           | Intent recog.     | Native, Edge, Mobile     | Yes         | Free      |
+| AssemblyAI Universal-2  | Commercial  | 300–600      | ~14.5   | 102       | Add-on      | ?            | Custom vocab      | Cloud API                | No          | ~$0.006   |
+| Google Chirp            | Commercial  | 200–500      | ~11.6   | 125+      | Yes         | ?            | Phrase hints      | Cloud, On-prem           | No          | ~$0.006   |
+| AWS Transcribe          | Commercial  | 200–400      | ~14     | 100+      | Add-on      | ?            | Custom vocab      | Cloud, Edge (Greengrass) | No          | ~$0.024   |
+| Microsoft Azure Speech  | Commercial  | 200–500      | ~17     | 100+      | Yes         | ?            | Phrase lists      | Cloud, On-device, Hybrid | No          | ~$0.016   |
+| Whisper Large V3        | Open-source | 200–500      | ~7.4    | 99+       | No\*        | N/A^6^       | Fine-tuning       | Self-hosted, Edge        | Yes         | Free      |
+| Canary Qwen 2.5B        | Open-source | 100–300      | ~5.6    | English   | No          | N/A^6^       | LLM decoder       | Self-hosted              | Yes         | Free      |
+| Omnilingual ASR         | Open-source | ~1000        | <10 CER | 1,600+    | No          | ?            | Zero-shot         | Self-hosted              | Yes         | Free      |
+| Parakeet TDT            | Open-source | <100         | ~8      | English   | No          | **Yes**      | Fast streaming    | Self-hosted, Edge        | Yes         | Free      |
+| Web Speech API          | Browser     | 300–500      | varies  | many      | No          | No           | None              | Browser built-in         | N/A         | Free      |
 
 \*Whisper does not natively support diarization, but can be combined with external diarization toolkits.
 \*\*Soniox v4 WER benchmarks not yet independently published; open-source comparison framework available at https://github.com/soniox/soniox-compare.
 \*\*\*Voxtral Realtime diarization not available; use batch mode (Voxtral Mini V2) for speaker identification.
+^4^**Monotonic** = interim results are append-only (earlier tokens are never revised). "No" means interims may be revised as more audio context arrives. "?" means not confirmed.
+^5^Moonshine v2 streaming models are English-only; 7 additional languages have non-streaming (v1) models.
+^6^N/A — no native streaming mode; these models process complete audio segments.
 
 ---
 
@@ -570,6 +658,8 @@ The comparison table above highlights the diversity and strengths of leading rea
 **AssemblyAI**, **Google Chirp**, **AWS Transcribe**, and **Microsoft Azure Speech** provide strong alternatives for enterprises seeking managed cloud APIs with broad language coverage and integrated features. Their WERs range from 11–17%, with latency typically in the 200–600ms range.
 
 Among open-source models, **Whisper Large V3** remains the gold standard for multilingual ASR, while **Canary Qwen 2.5B** and **IBM Granite Speech 3.3 8B** lead in English accuracy. **Omnilingual ASR** breaks new ground with support for over 1,600 languages, though with higher latency and hardware requirements.
+
+**Moonshine v2** (Moonshine AI) is a standout for edge deployment: its Medium model (245M params) beats Whisper Large v3 (1.5B params) on the Open ASR Leaderboard at 6.65% WER, while achieving 258ms response latency on a MacBook M3 CPU — 43x faster than Whisper Large. The sliding-window streaming encoder with caching is genuinely streaming (not chunked batch), though the autoregressive decoder means final token generation still happens at endpoint. Uniquely among open-source models, Moonshine includes **built-in diarization, VAD, and intent recognition** in a single cross-platform C++ library. The main limitations are English-only streaming, no WebSocket server mode (needs a bridge for browser apps), no word-level timestamps, and non-monotonic interims (text may be revised before finalization).
 
 **Parakeet TDT** and **Nemotron Speech ASR** exemplify the latest advances in ultra-low latency streaming, leveraging cache-aware architectures and efficient downsampling to deliver sub-100ms responsiveness at scale.
 
@@ -590,7 +680,7 @@ Despite remarkable progress, several challenges and opportunities remain in real
 
 ## Conclusion
 
-As of early 2026, real-time streaming ASR has reached a level of maturity and sophistication that enables seamless, natural voice interactions across a wide range of applications and languages. **Soniox v4 Real-Time** pushes the frontier with semantic endpointing and token-level streaming at the lowest price point, while **Voxtral Realtime** offers the best accuracy with an open-weights self-hosting path. **Deepgram Nova-3** and **ElevenLabs Scribe v2 Realtime** remain strong for broader language coverage and established ecosystems. **Sherpa-ONNX**, Whisper, and Omnilingual ASR exemplify the power and flexibility of open-source solutions. The field continues to evolve rapidly, with ongoing innovations in multilingual modeling, edge deployment, joint ASR-diarization frameworks, and domain adaptation.
+As of early 2026, real-time streaming ASR has reached a level of maturity and sophistication that enables seamless, natural voice interactions across a wide range of applications and languages. **Soniox v4 Real-Time** pushes the frontier with semantic endpointing and token-level streaming at the lowest price point, while **Voxtral Realtime** offers the best accuracy with an open-weights self-hosting path. **Deepgram Nova-3** and **ElevenLabs Scribe v2 Realtime** remain strong for broader language coverage and established ecosystems. **Moonshine v2** sets a new bar for edge ASR with built-in diarization, intent recognition, and Whisper-beating accuracy in a 245M-parameter package. **Sherpa-ONNX**, Whisper, and Omnilingual ASR exemplify the power and flexibility of open-source solutions. The field continues to evolve rapidly, with ongoing innovations in multilingual modeling, edge deployment, joint ASR-diarization frameworks, and domain adaptation.
 
 For developers, enterprises, and researchers, the choice of ASR solution depends on specific requirements for latency, accuracy, language coverage, privacy, and deployment flexibility. The current SOTA offers a rich ecosystem of models and APIs, each with distinct strengths and trade-offs. By leveraging the latest advances and benchmarking tools, stakeholders can build voice-enabled systems that are accurate, responsive, and inclusive—pushing the boundaries of what is possible in human-computer interaction.
 

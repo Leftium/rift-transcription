@@ -383,12 +383,13 @@ RIFT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
 ## Transcription Sources
 
-Five sources with different tradeoffs:
+Six sources with different tradeoffs:
 
 | Source                | Purpose                               | Latency             | Accuracy        | Setup         | Price       |
 | --------------------- | ------------------------------------- | ------------------- | --------------- | ------------- | ----------- |
 | **Web Speech API**    | Zero-config demo, broad compatibility | Medium (~300-500ms) | Good            | None          | Free        |
 | **Sherpa**            | Research, optimal latency, offline    | Low (~100-200ms)    | Good (~4-6%)    | Local install | Free        |
+| **Moonshine v2**      | Edge, diarization, smallest models    | Very low (50-258ms) | Excellent (~7%) | Local install | Free        |
 | **Soniox v4**         | Production streaming, best RIFT fit   | Very low (<100ms)   | Excellent       | API key       | $0.002/min  |
 | **Voxtral Realtime**  | Production streaming, best value      | Very low (<200ms)   | Excellent (~4%) | API key       | $0.006/min  |
 | **ElevenLabs Scribe** | Production accuracy, most languages   | Low (~150ms)        | Excellent (~6%) | API key       | ~$0.015/min |
@@ -447,6 +448,53 @@ type SherpaSource = {
 - Customizable models ✓
 
 **Best for:** Research, latency-sensitive use cases, privacy-conscious users.
+
+### Moonshine v2 (Moonshine AI)
+
+Local ASR with built-in diarization, VAD, and intent recognition in a single cross-platform library. Very small models with competitive accuracy.
+
+```typescript
+type MoonshineSource = {
+	type: 'moonshine';
+	// No native WebSocket server — requires a bridge (Python or future WASM)
+	bridgeUrl?: string; // e.g., 'ws://localhost:8765'
+	modelSize?: 'tiny' | 'small' | 'medium';
+};
+```
+
+**Architecture:** Sliding-window streaming encoder (genuinely streaming, not chunked batch) with autoregressive decoder. Encoder caches previous computations and processes new audio incrementally with only 80ms lookahead. See [Moonshine v2 paper (arXiv:2602.12241)](https://arxiv.org/abs/2602.12241).
+
+**Capabilities:**
+
+- Segment-level timestamps (`start_time`, `duration`) — **no word-level timestamps**
+- Built-in speaker diarization (`speaker_id` on `LineCompleted` events) ✓
+- Built-in VAD ✓
+- Built-in intent recognition (semantic fuzzy matching via Gemma 300M embeddings) ✓
+- Works offline ✓
+- Event-based API: `LineStarted` / `LineTextChanged` / `LineCompleted`
+- Interims may be revised (non-monotonic) — similar to Web Speech API
+
+**Models (English streaming):**
+
+| Model  | Params | WER    | Latency (M3 CPU) |
+| ------ | ------ | ------ | ---------------- |
+| Tiny   | 34M    | 12.00% | 50ms             |
+| Small  | 123M   | 7.84%  | 148ms            |
+| Medium | 245M   | 6.65%  | 258ms            |
+
+Medium beats Whisper Large v3 (7.44% WER, 1.5B params) with 6x fewer parameters.
+
+**Limitations:**
+
+- No WebSocket server mode — needs a Python bridge or future WASM build for browser integration
+- No word-level timestamps (only segment-level) — RIFT's per-word confidence coloring won't work
+- Non-monotonic interims — text may be revised before `LineCompleted`, requiring `isFinal`/`isEndpoint` handling similar to Web Speech
+- Streaming models English-only (7 other languages have non-streaming v1 models)
+- Not optimized for GPU batch throughput
+
+**Integration path for RIFT:** A thin Python WebSocket bridge (`moonshine_voice.MicTranscriber` → WebSocket server) is the simplest approach. The `LineStarted`/`LineTextChanged`/`LineCompleted` event model maps naturally to RIFT's `Transcript` type, similar to how Web Speech API's `onresult` is mapped today.
+
+**Best for:** Edge deployment with diarization, smallest possible models, privacy-first use cases where speaker identification matters.
 
 ### Soniox v4 Real-Time
 
@@ -561,7 +609,7 @@ type TranscriptionError = ReturnType<typeof TranscriptionError>;
 // Source interface (aligned with transcription-rs naming: "Source" = push-based, "Engine" = pull-based)
 // See: https://github.com/Leftium/transcribe-rs/blob/docs/streaming-api-spec/specs/transcription-rs.md
 interface TranscriptionSource {
-	readonly name: string; // 'web-speech' | 'sherpa' | 'soniox' | 'voxtral' | 'scribe'
+	readonly name: string; // 'web-speech' | 'sherpa' | 'moonshine' | 'soniox' | 'voxtral' | 'scribe'
 
 	startListening(): Result<void, TranscriptionError>;
 	stopListening(): Result<void, TranscriptionError>;
@@ -639,27 +687,31 @@ type Word = {
 
 **Source capability matrix:**
 
-| Field          | Web Speech           | Sherpa | Soniox v4      | Voxtral | Scribe  |
-| -------------- | -------------------- | ------ | -------------- | ------- | ------- |
-| `text`         | ✓                    | ✓      | ✓              | ✓       | ✓       |
-| `isFinal`      | ✓                    | ✓      | ✓ (per-token)  | ✓       | ✓       |
-| `isEndpoint`   | forced only          | ✓      | ✓ (semantic)   | ✓       | ✓       |
-| `segmentId`    | ✓ (client-generated) | ✓      | ✓              | ✓       | ✓       |
-| `start`/`end`  | ✗                    | ✓      | ✓              | ✓       | ✓       |
-| `words`        | ✗                    | ✓      | ✓ (tokens)     | segment | ✓       |
-| `confidence`   | ✗                    | ✓      | ?              | ?       | ✓       |
-| `speaker`      | ✗                    | ✓      | ✓ (real-time)  | batch   | batch   |
-| `alternatives` | ✗                    | ✗      | ✗              | ✗       | ✗       |
-| `finalize`     | fake (stop+restart)  | ✓      | ✓ (ms-latency) | ✓       | ✓       |
-| Languages      | browser-dependent    | 10+    | 60+            | 13      | 90+     |
-| Price/min      | free                 | free   | $0.002         | $0.006  | ~$0.015 |
+| Field          | Web Speech           | Sherpa  | Moonshine v2      | Soniox v4      | Voxtral | Scribe  |
+| -------------- | -------------------- | ------- | ----------------- | -------------- | ------- | ------- |
+| `text`         | ✓                    | ✓       | ✓                 | ✓              | ✓       | ✓       |
+| `isFinal`      | ✓                    | ✓       | ✓ (LineCompleted) | ✓ (per-token)  | ✓       | ✓       |
+| `isEndpoint`   | forced only          | ✓       | ✓ (LineCompleted) | ✓ (semantic)   | ✓       | ✓       |
+| `segmentId`    | ✓ (client-generated) | ✓       | ✓ (lineId)        | ✓              | ✓       | ✓       |
+| `start`/`end`  | ✗                    | ✓       | segment only      | ✓              | ✓       | ✓       |
+| `words`        | ✗                    | ✓       | ✗                 | ✓ (tokens)     | segment | ✓       |
+| `confidence`   | ✗                    | ✓       | ✗                 | ?              | ?       | ✓       |
+| `speaker`      | ✗                    | ✗       | ✓ (built-in)      | ✓ (real-time)  | batch   | batch   |
+| `monotonic`    | No                   | **Yes** | No                | No             | ?       | ?       |
+| `alternatives` | ✗                    | ✗       | ✗                 | ✗              | ✗       | ✗       |
+| `finalize`     | fake (stop+restart)  | ✓       | ✓ (stop)          | ✓ (ms-latency) | ✓       | ✓       |
+| Languages      | browser-dependent    | 10+     | 8 (EN streaming)  | 60+            | 13      | 90+     |
+| Price/min      | free                 | free    | free              | $0.002         | $0.006  | ~$0.015 |
 
 **Notes:**
 
+- **`monotonic`** = interim results are append-only (earlier tokens/words are never revised). When `Yes`, all interims can be treated as `isFinal: true` for display purposes (sherpa-onnx transducer models). When `No`, the source may revise earlier text in subsequent interims — the UI must track `segmentId` and replace previous interim text.
 - Web Speech API's `finalize()` implemented as stop + restart (higher latency)
-- Web Speech lacks timing/word data—utterance tracker treats full transcript as single segment
+- Web Speech lacks timing/word data — utterance tracker treats full transcript as single segment
 - Soniox streams individual tokens with `is_final` flags (not full-transcript replacements)
 - Voxtral provides segment-level timestamps; word-level granularity TBD
+- Moonshine v2 provides segment-level `start_time` + `duration` but no per-word timestamps or confidence
+- Moonshine v2 has built-in diarization and intent recognition — unique among local/free sources
 - `speaker` row shows diarization availability (same data that was previously in a separate "Diarization" row)
 - `alternatives` not yet available from any streaming source we support; future addition
 - Uses WellCrafted Result type for explicit error handling
@@ -676,6 +728,11 @@ function detectSource(): Result<TranscriptionSource, SourceError> {
 	// Prefer Sherpa if available (e.g., WASM loaded, native module present)
 	if (isSherpaAvailable()) {
 		return Ok(createSherpaSource(config));
+	}
+
+	// Prefer Moonshine if bridge available (diarization, smallest models)
+	if (isMoonshineAvailable()) {
+		return Ok(createMoonshineSource(config));
 	}
 
 	// Prefer Soniox if API key configured (best RIFT fit: finalize + semantic endpointing)
@@ -712,11 +769,12 @@ function selectSource(config: Config): Result<TranscriptionSource, SourceError> 
 
 **Priority order:**
 
-1. Sherpa (if available) — best latency, offline, no API costs
-2. Soniox (if API key configured) — best RIFT fit (ms-finalize, semantic endpointing, token streaming)
-3. Voxtral (if API key configured) — best price/performance, future self-hosting
-4. Scribe (if API key configured) — most languages, code-switching
-5. Web Speech API — zero-config fallback
+1. Sherpa (if available) — best latency, offline, word-level timestamps, monotonic interims
+2. Moonshine (if bridge available) — diarization, smallest models, edge-first
+3. Soniox (if API key configured) — best RIFT fit (ms-finalize, semantic endpointing, token streaming)
+4. Voxtral (if API key configured) — best price/performance, future self-hosting
+5. Scribe (if API key configured) — most languages, code-switching
+6. Web Speech API — zero-config fallback
 
 ### Hot-Swapping Sources
 
@@ -835,7 +893,7 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 
 ## Planned Tech Stack
 
-- **Transcription** — Web Speech API (demo) / Sherpa (research) / Soniox v4 (production, best RIFT fit) / Voxtral (value) / Scribe (languages)
+- **Transcription** — Web Speech API (demo) / Sherpa (research) / Moonshine v2 (edge, diarization) / Soniox v4 (production, best RIFT fit) / Voxtral (value) / Scribe (languages)
 - **ElevenLabs TTS** — Synthesize typed text, potentially voice-cloned
 
 ---
@@ -1427,6 +1485,7 @@ Start with **Web Speech API**, then add production sources:
 | ----- | ---------- | -------------------------------------------------------- |
 | 1     | Web Speech | Zero setup, fast iteration, proves architecture          |
 | 2     | Sherpa     | Adds word timestamps, real `finalize`, offline support   |
+| 2b    | Moonshine  | Adds diarization, smallest models, edge-first            |
 | 3a    | Soniox     | Best RIFT fit: ms-finalize, semantic endpointing, tokens |
 | 3b    | Voxtral    | Alternative: best price/performance (~$0.006/min)        |
 | 3c    | Scribe     | Alternative if 90+ languages or diarization needed       |
@@ -1477,3 +1536,6 @@ Start with **Web Speech API**, then add production sources:
 - Experiment with different commit triggers and timing thresholds
 - Consider OTIO (OpenTimelineIO) export for interop with video editors
 - Monitor community tooling for Voxtral self-hosting (sherpa-onnx integration, etc.)
+- Evaluate Moonshine v2 Python WebSocket bridge feasibility and latency overhead
+- Test Moonshine v2 diarization quality for RIFT's speaker attribution use case
+- Monitor Moonshine for word-level timestamps and WASM/browser deployment support

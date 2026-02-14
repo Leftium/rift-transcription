@@ -159,7 +159,7 @@ Note in the spec's Sandboxing section that the script format's expressiveness is
 | `language`      | Transcript metadata   | Filter rules by language, format numbers/dates by locale    |
 | `currentApp`    | OS (desktop only)     | Adapt formality for Slack vs email vs code editor           |
 | `previousText`  | Transcription history | Continuity — don't re-capitalize if continuing mid-sentence |
-| `selectedText`  | TranscribeArea        | Manual transforms operate on selection                      |
+| `selectedText`  | TranscriptArea        | Manual transforms operate on selection                      |
 | `clipboardText` | OS                    | Transform arbitrary clipboard text (Whispering #835)        |
 | `timestamp`     | Runtime               | Dynamic values (date/time rules already need this)          |
 

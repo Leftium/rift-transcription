@@ -196,7 +196,7 @@
 		if (debug) {
 			const data = `final=${transcript.isFinal} ep=${transcript.isEndpoint} seg=${transcript.segmentId} "${transcript.text}" val=${value.length} interims=${interims.size} ins=${insertionStart}..${insertionEnd}`;
 			gg.ns(
-				'rift-transcription:TranscribeArea:transcript',
+				'rift-transcription:TranscriptArea:transcript',
 				ggTranscript.bold()`transcript` + ggTranscript` ${data}`
 			);
 		}
@@ -319,7 +319,7 @@
 
 		if (debug) {
 			const data = `rawLen=${rawValue.length} val=${value.length} interims=${interims.size} snippet="${rawValue.slice(-40)}" trusted=${e.isTrusted} type=${(e as unknown as InputEvent).inputType}`;
-			gg.ns('rift-transcription:TranscribeArea:input', ggInput.bold()`input` + ggInput` ${data}`);
+			gg.ns('rift-transcription:TranscriptArea:input', ggInput.bold()`input` + ggInput` ${data}`);
 		}
 
 		// User typed while interims were active — interims are implicitly
@@ -373,7 +373,7 @@
 	}
 </script>
 
-<div class="transcribe-area" bind:this={containerEl}>
+<div class="transcript-area" bind:this={containerEl}>
 	<!-- Preview div: whitespace between inline elements is eliminated to prevent
 	     collapsed-space misalignment vs the textarea's plain-text rendering.
 	     Svelte preserves template whitespace as text nodes, so all tags/blocks
@@ -426,7 +426,7 @@
 
 {#if debug}
 	<details open class="ta-debug">
-		<summary>TranscribeArea Debug</summary>
+		<summary>TranscriptArea Debug</summary>
 		<div class="ta-debug-state">
 			<span><b>value:</b> {value.length}ch</span>
 			<span><b>display:</b> {displayValue.length}ch</span>
@@ -453,7 +453,7 @@
 {/if}
 
 <style>
-	.transcribe-area {
+	.transcript-area {
 		position: relative;
 		font-family: 'Courier New', Courier, monospace;
 		font-size: 16px;
@@ -556,7 +556,7 @@
 	   Stable = dotted underline (text won't change, not yet committed)
 	   Unstable = dotted underline + italic + desaturated (text may still change)
 	   Color comes from inline style:color (OKLCH confidence hue) when available.
-	   font-synthesis:none on .transcribe-area prevents faux-italic width drift. */
+	   font-synthesis:none on .transcript-area prevents faux-italic width drift. */
 	.interim {
 		text-decoration: underline;
 		text-decoration-color: #bbb;
@@ -592,7 +592,7 @@
 		color: #999;
 	}
 
-	.transcribe-area:has(.input:disabled) {
+	.transcript-area:has(.input:disabled) {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}

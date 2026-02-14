@@ -448,11 +448,11 @@ This order reflects increasing fuzziness: exact pattern matches first, then fuzz
 
 ### When Transforms Run
 
-TranscribeArea acts as a **text preparation stage** (similar to [Drafts](https://getdrafts.com/)) — raw transcription is captured, transforms are previewed in real-time, and the result is delivered to a target (clipboard, app, export).
+TranscriptArea acts as a **text preparation stage** (similar to [Drafts](https://getdrafts.com/)) — raw transcription is captured, transforms are previewed in real-time, and the result is delivered to a target (clipboard, app, export).
 
 ```
                             ┌─────────────────────────────┐
-                            │ TranscribeArea              │
+                            │ TranscriptArea              │
                             │                             │
 Source → Transcript ──────► │ [text]                      │
                             │   ↕ auto transforms applied │

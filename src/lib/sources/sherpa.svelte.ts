@@ -223,7 +223,7 @@ export class SherpaSource implements TranscriptionSource {
 
 		// Skip empty-text messages — sherpa sends these as segment
 		// placeholders and empty finals that would pollute committedThroughSegment
-		// tracking in TranscribeArea, blocking future interims.
+		// tracking in TranscriptArea, blocking future interims.
 		if (!text) return;
 
 		// --- Detect server type and finality ---
@@ -232,7 +232,7 @@ export class SherpaSource implements TranscriptionSource {
 
 		if (hasFinalField) {
 			// C++ server: has explicit is_final (= endpoint detected).
-			// Use monotonic segmentIds so TranscribeArea's
+			// Use monotonic segmentIds so TranscriptArea's
 			// committedThroughSegment rejection works correctly.
 			// Sherpa reuses server segment IDs after empty finals,
 			// so map them to our own counter.

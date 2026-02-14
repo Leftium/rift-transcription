@@ -1,5 +1,5 @@
 <script lang="ts">
-	import TranscribeArea from '$lib/TranscribeArea.svelte';
+	import TranscriptArea from '$lib/TranscriptArea.svelte';
 	import { transcribable } from '$lib/transcribable.js';
 	import CopyButton from '$lib/CopyButton.svelte';
 
@@ -16,11 +16,11 @@
 	let value2 = $state('');
 	let showUtterances = $state(false);
 	let showConfidence = $state(false);
-	let transcribeAreaEl: HTMLElement | undefined = $state();
+	let transcriptAreaEl: HTMLElement | undefined = $state();
 	let lastFocusedTextarea: HTMLTextAreaElement | undefined = $state();
 	let replaying = $state(false);
 
-	// Replicates TranscribeArea's OKLCH confidence-to-color interpolation for the heading demo.
+	// Replicates TranscriptArea's OKLCH confidence-to-color interpolation for the heading demo.
 	const TEAL = { L: 0.6, C: 0.104, H: 185 };
 	const AMBER = { L: 0.666, C: 0.157, H: 58 };
 	function confidenceToColor(confidence: number): string {
@@ -47,7 +47,7 @@
 	// -----------------------------------------------------------------------
 	// Replay recorded events — real-time playback of a captured session.
 	// Events are typed keystrokes and broadcastTranscript() calls replayed
-	// at the original timestamps so the TranscribeArea renders interims,
+	// at the original timestamps so the TranscriptArea renders interims,
 	// finals, and user typing exactly as they happened live.
 	// -----------------------------------------------------------------------
 
@@ -200,7 +200,7 @@
 
 	async function replayRecordedEvents() {
 		// Focus the right textarea (same pattern as seedTestData)
-		const target = lastFocusedTextarea ?? transcribeAreaEl?.querySelector('textarea');
+		const target = lastFocusedTextarea ?? transcriptAreaEl?.querySelector('textarea');
 		if (target) target.focus();
 		await tick();
 
@@ -239,8 +239,8 @@
 
 	async function seedTestData() {
 		// Re-focus the last-focused textarea (clicking the button steals focus);
-		// fall back to the TranscribeArea textarea if none was previously focused.
-		const target = lastFocusedTextarea ?? transcribeAreaEl?.querySelector('textarea');
+		// fall back to the TranscriptArea textarea if none was previously focused.
+		const target = lastFocusedTextarea ?? transcriptAreaEl?.querySelector('textarea');
 		if (target) target.focus();
 		await tick();
 
@@ -325,11 +325,11 @@
 </script>
 
 <main>
-	<h1>RIFT TranscribeArea</h1>
+	<h1>RIFT TranscriptArea</h1>
 	<p class="intro">
 		Voice input that works like a textarea. Enable voice input, then focus any input below and
 		speak. See the <a
-			href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
+			href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcriptarea-textarea-shaped-voice-input"
 			>spec</a
 		> for details.
 	</p>
@@ -378,7 +378,7 @@
 						// Wait for Svelte to flush inputmode="none" to the DOM
 						// before focusing — otherwise mobile keyboard appears briefly.
 						await tick();
-						transcribeAreaEl?.querySelector('textarea')?.focus();
+						transcriptAreaEl?.querySelector('textarea')?.focus();
 					}
 				}}
 			>
@@ -417,7 +417,7 @@
 		}}
 	>
 		<section class="level">
-			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
+			<h2>Level 2: <code>&lt;TranscriptArea&gt;</code> component</h2>
 			<p class="level-desc">
 				Full experience. 3 dimensions of transcription:
 				<span class="desc-composing">composing</span>,
@@ -437,8 +437,8 @@
 					Show confidence
 				</label>
 			</div>
-			<div bind:this={transcribeAreaEl}>
-				<TranscribeArea
+			<div bind:this={transcriptAreaEl}>
+				<TranscriptArea
 					bind:value={value2}
 					placeholder="Type or speak (with interims)..."
 					{showUtterances}

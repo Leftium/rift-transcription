@@ -10,7 +10,7 @@
  *   - Respects the current selection (replaces it)
  *
  * Non-endpoint transcripts are ignored — plain textareas can't style inline
- * ranges. For interim/stability display, use TranscribeArea instead.
+ * ranges. For interim/stability display, use TranscriptArea instead.
  *
  * Usage:
  *   <textarea {@attach transcribable} bind:value />

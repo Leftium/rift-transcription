@@ -37,7 +37,7 @@ export type Alternative = {
 
 /**
  * A transcription result — the unit of communication between a
- * TranscriptionSource and a consumer (TranscribeArea, RIFT Editor, etc.).
+ * TranscriptionSource and a consumer (TranscriptArea, RIFT Editor, etc.).
  */
 export type Transcript = {
 	text: string;
@@ -74,7 +74,7 @@ export type Transcript = {
 // ---------------------------------------------------------------------------
 // Transcript event — global broadcast mechanism
 // Sources dispatch this on document; receivers (transcribable action,
-// TranscribeArea) listen when focused. No manual wiring needed.
+// TranscriptArea) listen when focused. No manual wiring needed.
 // ---------------------------------------------------------------------------
 
 export const TRANSCRIPT_EVENT = 'rift:transcript';
@@ -91,7 +91,7 @@ export function broadcastTranscript(transcript: Transcript): void {
 }
 
 // ---------------------------------------------------------------------------
-// Smart spacing — shared between transcribable action and TranscribeArea
+// Smart spacing — shared between transcribable action and TranscriptArea
 // ---------------------------------------------------------------------------
 
 /** Add a space before text if the preceding character isn't whitespace. */

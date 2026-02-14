@@ -101,7 +101,7 @@ export class WebSpeechSource implements TranscriptionSource {
 
 	// Monotonic segment counter for emitted transcripts. Incremented after
 	// each real final so subsequent interims get a higher ID (avoiding
-	// TranscribeArea's committedThroughSegment rejection).
+	// TranscriptArea's committedThroughSegment rejection).
 	private nextSegmentId = 0;
 
 	// Restart backoff — prevents tight restart loops when Chrome kills
@@ -232,7 +232,7 @@ export class WebSpeechSource implements TranscriptionSource {
 				if (isFakeInterim) {
 					// Android fake interims have cumulative text (each contains
 					// the full utterance so far). Emit with nextSegmentId so
-					// TranscribeArea's interims.set() replaces rather than
+					// TranscriptArea's interims.set() replaces rather than
 					// accumulates. Same segmentId for all fake interims within
 					// one utterance — only bumped after a real final.
 					const transcript: Transcript = {

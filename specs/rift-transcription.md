@@ -840,16 +840,16 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 
 ---
 
-## TranscribeArea: Textarea-Shaped Voice Input
+## TranscriptArea: Textarea-Shaped Voice Input
 
 ### Core Concept
 
-A `TranscribeArea` is a textarea that also accepts input events triggered by voice. From the component's perspective, voice is just another input source — like an IME or autocomplete. The component doesn't own the mic or recording logic; it receives `Transcript` events and handles display/composition.
+A `TranscriptArea` is a textarea that also accepts input events triggered by voice. From the component's perspective, voice is just another input source — like an IME or autocomplete. The component doesn't own the mic or recording logic; it receives `Transcript` events and handles display/composition.
 
 **The component is a display/composition layer, not a transcription engine.** It accepts the `Transcript` type already defined in this spec — text with an `isFinal` flag — and manages the interim→final lifecycle. Audio capture, recording control, and source selection all live outside the component.
 
 ```
-mic → recorder → audio → transcriber → Transcript → TranscribeArea
+mic → recorder → audio → transcriber → Transcript → TranscriptArea
                                         ^^^^^^^^^^    ^^^^^^^^^^^^^^
                                         this type     this component
 ```
@@ -904,7 +904,7 @@ For `<textarea>` and `contenteditable`, the browser handles (3)–(5) automatica
     ✗ Results fire on SpeechRecognition object, NOT on the textarea
 ```
 
-**TranscribeArea fills this gap** — it acts as (4), receiving `Transcript` events from the voice recognizer and managing the composition lifecycle that the OS would normally handle. This makes voice input behave like every other text input source from the element's perspective.
+**TranscriptArea fills this gap** — it acts as (4), receiving `Transcript` events from the voice recognizer and managing the composition lifecycle that the OS would normally handle. This makes voice input behave like every other text input source from the element's perspective.
 
 ### Voice Input as IME Composition
 
@@ -955,7 +955,7 @@ The component receives `Transcript` events — the same way a textarea receives 
 // Consumer wires the transcription source to the component
 source.onResult = (transcript) => {
 	// Dispatches composition events on the component internally
-	transcribeArea.handleTranscript(transcript);
+	transcriptArea.handleTranscript(transcript);
 };
 ```
 
@@ -1010,11 +1010,11 @@ textarea {
 
 The textarea and preview div use identical monospace font, size, padding, and line-height, so characters align perfectly. The textarea value is the source of truth; the preview div is a reactive render of the same string with interim spans wrapped in styled elements.
 
-**Constraints (acceptable for TranscribeArea):**
+**Constraints (acceptable for TranscriptArea):**
 
 - **Monospace font required** — variable-width fonts break character alignment between layers. Fine for a voice input component; the full RIFT editor (Tiptap/ProseMirror) handles proportional fonts.
 - **Fixed font size** — all text the same size. Fine for single-purpose input.
-- **No rich formatting in the textarea** — bold, headers, etc. aren't possible. Not needed here; TranscribeArea is for text capture, not document editing.
+- **No rich formatting in the textarea** — bold, headers, etc. aren't possible. Not needed here; TranscriptArea is for text capture, not document editing.
 
 These constraints don't apply to the full RIFT editor, which uses ProseMirror (see below).
 
@@ -1043,7 +1043,7 @@ The first implementation validates the input contract and overlay technique with
 
 **Known limitations:**
 
-- **Undo/redo is broken** — Svelte reactively sets the textarea's `value`, which the browser treats as a programmatic write (not a user edit), destroying the native undo stack. Fixing this in TranscribeArea would mean reimplementing an undo stack manually. Not worth it — ProseMirror's `history` plugin handles this natively for the RIFT Editor, where voice insertions are invertible transactions in the same undo stack as keyboard edits.
+- **Undo/redo is broken** — Svelte reactively sets the textarea's `value`, which the browser treats as a programmatic write (not a user edit), destroying the native undo stack. Fixing this in TranscriptArea would mean reimplementing an undo stack manually. Not worth it — ProseMirror's `history` plugin handles this natively for the RIFT Editor, where voice insertions are invertible transactions in the same undo stack as keyboard edits.
 
 **Deferred:**
 
@@ -1054,9 +1054,9 @@ This is the simplest thing that proves: (a) the overlay technique works for inli
 
 ### Two Components, One Contract
 
-TranscribeArea and the full RIFT Editor are **separate components for different use cases**, not stages of one migration. They share the same input contract:
+TranscriptArea and the full RIFT Editor are **separate components for different use cases**, not stages of one migration. They share the same input contract:
 
-|                           | **TranscribeArea**                                             | **RIFT Editor**                                   |
+|                           | **TranscriptArea**                                             | **RIFT Editor**                                   |
 | ------------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
 | **Use case**              | Simple voice-enabled text input                                | Rich transcription editor with metadata           |
 | **Rendering**             | Textarea + transparent overlay                                 | Tiptap / ProseMirror                              |
@@ -1077,7 +1077,7 @@ source.onResult = (transcript) => {
 };
 ```
 
-TranscribeArea is not a stepping stone to be discarded — it's a lightweight option for integrations that don't need rich editing. Apps like Whispering or Handy could ship TranscribeArea today and never need the full editor.
+TranscriptArea is not a stepping stone to be discarded — it's a lightweight option for integrations that don't need rich editing. Apps like Whispering or Handy could ship TranscriptArea today and never need the full editor.
 
 ---
 
@@ -1085,7 +1085,7 @@ TranscribeArea is not a stepping stone to be discarded — it's a lightweight op
 
 ### Why Not Textarea for the Full Editor?
 
-The TranscribeArea (textarea + overlay) handles simple voice input well, but the full RIFT editor needs capabilities beyond what a textarea can provide:
+The TranscriptArea (textarea + overlay) handles simple voice input well, but the full RIFT editor needs capabilities beyond what a textarea can provide:
 
 1. **Rich spans with metadata** — each word/phrase knows its origin, audio ref, timestamps
 2. **Multiple cursors/anchors** — transcription insertion point vs user cursor

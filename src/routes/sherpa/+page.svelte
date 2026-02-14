@@ -1,4 +1,7 @@
 <script lang="ts">
+	// Model cache shared with rift-local: ~/.cache/rift-local/models/<model-name>/
+	const MODELS = '$HOME/.cache/rift-local/models';
+
 	const codeBlocks: Record<string, string> = {
 		'download-binary': `mkdir -p ~/sherpa-onnx/bin && cd ~/sherpa-onnx
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.23/sherpa-onnx-v1.12.23-osx-universal2-shared.tar.bz2
@@ -8,31 +11,35 @@ cp -r sherpa-onnx-v1.12.23-osx-universal2-shared/lib .`,
 
 		quarantine: `xattr -r -d com.apple.quarantine ~/sherpa-onnx/`,
 
-		'model-nemotron': `cd ~/sherpa-onnx && mkdir -p models && cd models
+		'model-nemotron': `mkdir -p ~/.cache/rift-local/models/nemotron-streaming-en && cd /tmp
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2
-tar xf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2`,
+tar xf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2
+cp sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/{tokens.txt,encoder.int8.onnx,decoder.int8.onnx,joiner.int8.onnx} ~/.cache/rift-local/models/nemotron-streaming-en/
+rm -rf sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14*`,
 
-		'model-zipformer-small': `cd ~/sherpa-onnx && mkdir -p models && cd models
+		'model-zipformer-small': `mkdir -p ~/.cache/rift-local/models/zipformer-small-en && cd /tmp
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
-tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2`,
+tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2
+cp sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/{tokens.txt,encoder.onnx,decoder.onnx,joiner.onnx} ~/.cache/rift-local/models/zipformer-small-en/
+rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 
 		'start-nemotron': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
-  --port=6006 \\
+  --port=2177 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/tokens.txt \\
-  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/encoder.int8.onnx \\
-  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/decoder.int8.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14/joiner.int8.onnx`,
+  --tokens=${MODELS}/nemotron-streaming-en/tokens.txt \\
+  --encoder=${MODELS}/nemotron-streaming-en/encoder.int8.onnx \\
+  --decoder=${MODELS}/nemotron-streaming-en/decoder.int8.onnx \\
+  --joiner=${MODELS}/nemotron-streaming-en/joiner.int8.onnx`,
 
 		'start-zipformer-small': `~/sherpa-onnx/bin/sherpa-onnx-online-websocket-server \\
-  --port=6006 \\
+  --port=2177 \\
   --max-batch-size=1 \\
   --loop-interval-ms=10 \\
-  --tokens=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/tokens.txt \\
-  --encoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/encoder.onnx \\
-  --decoder=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx \\
-  --joiner=$HOME/sherpa-onnx/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx`
+  --tokens=${MODELS}/zipformer-small-en/tokens.txt \\
+  --encoder=${MODELS}/zipformer-small-en/encoder.onnx \\
+  --decoder=${MODELS}/zipformer-small-en/decoder.onnx \\
+  --joiner=${MODELS}/zipformer-small-en/joiner.onnx`
 	};
 
 	let copiedId = $state('');
@@ -47,18 +54,18 @@ tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2`,
 </script>
 
 <svelte:head>
-	<title>Sherpa-ONNX Server Setup</title>
+	<title>Sherpa-ONNX Standalone Server Setup</title>
 </svelte:head>
 
 <main>
 	<a href="/" class="back-link">&larr; Back to app</a>
 
-	<h1>Sherpa-ONNX Server Setup</h1>
+	<h1>Sherpa-ONNX Standalone Server Setup</h1>
 	<p class="intro">
-		Sherpa-ONNX is a local speech recognition server. Running it alongside the app enables private,
-		offline transcription via the "Sherpa (local)" source option.
+		Manual setup for the sherpa-onnx C++ WebSocket server. For an easier alternative that handles
+		model downloads automatically, see
+		<a href="/local-setup">rift-local (recommended)</a>.
 	</p>
-
 	<h2>1. Download Server Binary</h2>
 	<p>For macOS (Universal -- works on Intel and Apple Silicon):</p>
 	<div class="code-block">
@@ -120,9 +127,12 @@ tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2`,
 
 	<details class="model-group">
 		<summary>
-			<strong>Zipformer Small (~55 MB) -- lightweight alternative</strong>
+			<strong>Zipformer Kroko (~68 MB) -- lightweight alternative</strong>
 			<span class="model-desc">
-				Fastest option, lowest resource usage. No punctuation or capitalization, lower accuracy.
+				Fast, lightweight Kroko ASR model. No punctuation or capitalization, lower accuracy.
+				<a href="https://huggingface.co/Banafo/Kroko-ASR" target="_blank" rel="noopener">
+					Model card
+				</a>
 			</span>
 		</summary>
 		<h4>Download</h4>
@@ -155,8 +165,8 @@ tar xf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2`,
 	<h2>3. Server Flags</h2>
 	<ul class="flags">
 		<li>
-			<code>--port=6006</code> -- WebSocket port (must match the URL in the app, default
-			<code>ws://localhost:6006</code>)
+			<code>--port=2177</code> -- WebSocket port (must match the URL in the app, default
+			<code>ws://localhost:2177</code>)
 		</li>
 		<li>
 			<code>--max-batch-size=1</code> -- Process immediately instead of batching (reduces latency for

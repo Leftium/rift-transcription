@@ -105,16 +105,16 @@
 </script>
 
 <main>
-	<h1>RIFT TranscribeArea</h1>
-	<p class="intro">
-		Voice input that works like a textarea. Enable voice input, then focus any input below and
-		speak. See the <a
-			href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
-			>spec</a
-		> for details.
-	</p>
+	<div class="sticky-header">
+		<h1>RIFT TranscribeArea</h1>
+		<p class="intro">
+			Voice input that works like a textarea. Enable voice input, then focus any input below and
+			speak. See the <a
+				href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
+				>spec</a
+			> for details.
+		</p>
 
-	<div class="input-group">
 		<div class="controls">
 			<select
 				value={voice.sourceType}
@@ -179,6 +179,13 @@
 			</span>
 		</div>
 
+		<div class="controls">
+			<button class="seed-btn" onclick={seedTestData}>Seed test data</button>
+			<!-- Future: replay recorded events button -->
+		</div>
+	</div>
+
+	<div class="input-group">
 		<section class="level">
 			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
 			<p class="level-desc">
@@ -197,7 +204,6 @@
 					<input type="checkbox" bind:checked={showConfidence} />
 					Show confidence
 				</label>
-				<button class="seed-btn" onclick={seedTestData}>Seed test data</button>
 			</div>
 			<div bind:this={transcribeAreaEl}>
 				<TranscribeArea
@@ -355,10 +361,14 @@
 		margin-bottom: 8px;
 	}
 
-	.controls:last-of-type {
-		margin-bottom: 20px;
-		padding-bottom: 12px;
+	.sticky-header {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background: white;
+		padding-bottom: 8px;
 		border-bottom: 1px solid #eee;
+		margin-bottom: 16px;
 	}
 
 	button {

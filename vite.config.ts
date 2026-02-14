@@ -5,6 +5,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [sveltekit(), devtoolsJson(), ...ggPlugins()],
+	build: {
+		target: 'es2020'
+	},
 	server: {
 		allowedHosts: ['.ngrok-free.app'],
 		proxy: {

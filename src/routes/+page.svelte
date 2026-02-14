@@ -18,6 +18,200 @@
 	let showConfidence = $state(false);
 	let transcribeAreaEl: HTMLElement | undefined = $state();
 	let lastFocusedTextarea: HTMLTextAreaElement | undefined = $state();
+	let replaying = $state(false);
+
+	// -----------------------------------------------------------------------
+	// Replay recorded events — real-time playback of a captured session.
+	// Events are typed keystrokes and broadcastTranscript() calls replayed
+	// at the original timestamps so the TranscribeArea renders interims,
+	// finals, and user typing exactly as they happened live.
+	// -----------------------------------------------------------------------
+
+	type ReplayEvent =
+		| { type: 'transcript'; ms: number; transcript: Transcript }
+		| { type: 'input'; ms: number; text: string };
+
+	// Timeline parsed from a real capture:
+	//   voice says "left", user types "ium:", voice says " the element of creativity", user types "!"
+	// Base timestamp: 03:19:39.210 — all offsets relative to that.
+	const replayTimeline: ReplayEvent[] = [
+		// seg=0 interim "left" (1% confidence)
+		{
+			type: 'transcript',
+			ms: 0,
+			transcript: {
+				text: 'left',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 0,
+				confidence: 0.01
+			}
+		},
+		// seg=0 final "left" (69% confidence)
+		{
+			type: 'transcript',
+			ms: 485,
+			transcript: { text: 'left', isFinal: true, isEndpoint: true, segmentId: 0, confidence: 0.69 }
+		},
+		// User types "ium:" after "left" is committed
+		{ type: 'input', ms: 1001, text: 'i' },
+		{ type: 'input', ms: 1152, text: 'u' },
+		{ type: 'input', ms: 1416, text: 'm' },
+		{ type: 'input', ms: 1946, text: ':' },
+		// seg=1 interims — voice recognizing " the element of creativity"
+		{
+			type: 'transcript',
+			ms: 3506,
+			transcript: {
+				text: ' the',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.01
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 3699,
+			transcript: {
+				text: ' the element',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.01
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 4055,
+			transcript: {
+				text: ' the element of',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.01
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 4096,
+			transcript: {
+				text: ' the element of',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.9
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 4427,
+			transcript: {
+				text: ' the element of',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.9
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 4598,
+			transcript: {
+				text: ' the element of cre',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.9
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 4694,
+			transcript: {
+				text: ' the element of cre',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.9
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 4731,
+			transcript: {
+				text: ' the element of creativity',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.9
+			}
+		},
+		{
+			type: 'transcript',
+			ms: 5278,
+			transcript: {
+				text: ' the element of creativity',
+				isFinal: false,
+				isEndpoint: false,
+				segmentId: 1,
+				confidence: 0.9
+			}
+		},
+		// seg=1 final (97% confidence)
+		{
+			type: 'transcript',
+			ms: 5437,
+			transcript: {
+				text: ' the element of creativity',
+				isFinal: true,
+				isEndpoint: true,
+				segmentId: 1,
+				confidence: 0.97
+			}
+		},
+		// User types "!" after final commits
+		{ type: 'input', ms: 5649, text: '!' }
+	];
+
+	async function replayRecordedEvents() {
+		// Focus the right textarea (same pattern as seedTestData)
+		const target = lastFocusedTextarea ?? transcribeAreaEl?.querySelector('textarea');
+		if (target) target.focus();
+		await tick();
+
+		// Insert two newlines to separate from existing content (if any)
+		if (target && target.value.length > 0) {
+			document.execCommand('insertText', false, '\n\n');
+			await tick();
+		}
+
+		replaying = true;
+		let prevMs = 0;
+
+		for (const event of replayTimeline) {
+			// Wait the real-time delta between events
+			const delta = event.ms - prevMs;
+			if (delta > 0) {
+				await new Promise((r) => setTimeout(r, delta));
+			}
+			prevMs = event.ms;
+
+			if (event.type === 'transcript') {
+				broadcastTranscript(event.transcript);
+			} else {
+				// Simulate keyboard typing via execCommand so the textarea's
+				// input handler fires naturally (trusted-like behavior).
+				const el = document.activeElement;
+				if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+					document.execCommand('insertText', false, event.text);
+				}
+			}
+			await tick();
+		}
+
+		replaying = false;
+	}
 
 	async function seedTestData() {
 		// Re-focus the last-focused textarea (clicking the button steals focus);
@@ -183,7 +377,9 @@
 
 		<div class="controls">
 			<button class="seed-btn" onclick={seedTestData}>Seed test data</button>
-			<!-- Future: replay recorded events button -->
+			<button class="seed-btn" onclick={replayRecordedEvents} disabled={replaying}>
+				{replaying ? 'Replaying…' : 'Replay recorded events'}
+			</button>
 		</div>
 	</div>
 

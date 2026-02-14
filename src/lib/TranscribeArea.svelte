@@ -456,7 +456,7 @@
 	.transcribe-area {
 		position: relative;
 		font-family: 'Courier New', Courier, monospace;
-		font-size: 14px;
+		font-size: 16px;
 		line-height: 1.5;
 		font-synthesis: none;
 	}

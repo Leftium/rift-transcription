@@ -17,11 +17,13 @@
 	let showUtterances = $state(false);
 	let showConfidence = $state(false);
 	let transcribeAreaEl: HTMLElement | undefined = $state();
+	let lastFocusedTextarea: HTMLTextAreaElement | undefined = $state();
 
 	async function seedTestData() {
-		// Focus the TranscribeArea textarea so it receives the events
-		const textarea = transcribeAreaEl?.querySelector('textarea');
-		if (textarea) textarea.focus();
+		// Re-focus the last-focused textarea (clicking the button steals focus);
+		// fall back to the TranscribeArea textarea if none was previously focused.
+		const target = lastFocusedTextarea ?? transcribeAreaEl?.querySelector('textarea');
+		if (target) target.focus();
 		await tick();
 
 		// Simulate two utterances with deliberately varied word confidences
@@ -185,7 +187,15 @@
 		</div>
 	</div>
 
-	<div class="input-group">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="input-group"
+		onfocusin={(e: FocusEvent) => {
+			if (e.target instanceof HTMLTextAreaElement) {
+				lastFocusedTextarea = e.target;
+			}
+		}}
+	>
 		<section class="level">
 			<h2>Level 2: <code>&lt;TranscribeArea&gt;</code> component</h2>
 			<p class="level-desc">
@@ -336,7 +346,7 @@
 
 	.plain-textarea {
 		font-family: 'Courier New', Courier, monospace;
-		font-size: 14px;
+		font-size: 16px;
 		line-height: 1.5;
 		padding: 8px;
 		margin: 0;

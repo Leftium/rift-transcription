@@ -83,10 +83,15 @@
 		showConfidence = true;
 	}
 
-	// Persist Deepgram API key in localStorage
+	// Persist Deepgram API key and source type in localStorage
 	const DG_KEY = 'deepgram-api-key';
+	const SOURCE_TYPE_KEY = 'source-type';
 	onMount(() => {
 		voice.deepgramApiKey = localStorage.getItem(DG_KEY) ?? '';
+		const savedSource = localStorage.getItem(SOURCE_TYPE_KEY);
+		if (savedSource) {
+			voice.setSource(savedSource);
+		}
 	});
 
 	function setDeepgramKey(key: string) {
@@ -111,7 +116,14 @@
 
 	<div class="input-group">
 		<div class="controls">
-			<select value={voice.sourceType} onchange={(e) => voice.setSource(e.currentTarget.value)}>
+			<select
+				value={voice.sourceType}
+				onchange={(e) => {
+					const newSource = e.currentTarget.value;
+					voice.setSource(newSource);
+					localStorage.setItem(SOURCE_TYPE_KEY, newSource);
+				}}
+			>
 				<option value="web-speech">Web Speech API</option>
 				<option value="sherpa">Sherpa (local)</option>
 				<option value="deepgram">Deepgram (cloud)</option>

@@ -25,7 +25,7 @@ export class VoiceInputController {
 	#source: TranscriptionSource | null = $state(null);
 
 	enabled = $state(false);
-	sourceType = $state<SourceType>('sherpa');
+	sourceType = $state<SourceType>('web-speech');
 	sherpaUrl = $state('ws://localhost:6006');
 	deepgramApiKey = $state('');
 

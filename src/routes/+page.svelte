@@ -345,19 +345,19 @@
 				}}
 			>
 				<option value="web-speech">Web Speech API</option>
-				<option value="sherpa">Sherpa (local)</option>
+				<option value="local">Local</option>
 				<option value="deepgram">Deepgram (cloud)</option>
 			</select>
 
-			{#if voice.sourceType === 'sherpa'}
+			{#if voice.sourceType === 'local'}
 				<input
 					type="text"
 					class="server-url"
-					bind:value={voice.sherpaUrl}
+					bind:value={voice.localUrl}
 					placeholder="ws://localhost:6006"
 					size="24"
 				/>
-				<a href="/sherpa" class="setup-link">Setup</a>
+				<a href="/local-setup" class="setup-link">Setup</a>
 			{:else if voice.sourceType === 'deepgram'}
 				<input
 					type="password"
@@ -388,8 +388,8 @@
 			<span class="status">
 				<span class="dot" class:active={voice.listening}></span>
 				{#if voice.listening}
-					Listening — {voice.sourceType === 'sherpa'
-						? 'Sherpa'
+					Listening — {voice.sourceType === 'local'
+						? 'Local'
 						: voice.sourceType === 'deepgram'
 							? 'Deepgram'
 							: 'Web Speech'}

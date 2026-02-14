@@ -1,19 +1,22 @@
 /**
- * SherpaSource — TranscriptionSource backed by sherpa-onnx WebSocket server.
+ * LocalSource — TranscriptionSource backed by a local WebSocket server.
  *
- * Connects to a local sherpa-onnx C++ (or Python) WebSocket server, captures
- * mic audio via AudioWorklet, streams 16kHz Float32 binary frames, and maps
- * server JSON responses to the Transcript type.
+ * Connects to a local server (rift-local or standalone sherpa-onnx C++/Python),
+ * captures mic audio via AudioWorklet, streams 16kHz Float32 binary frames,
+ * and maps server JSON responses to the Transcript type.
  *
- * C++ server JSON: { text, tokens, timestamps, ys_probs, lm_probs, context_scores,
+ * rift-local JSON:  { type: "result", text, tokens, timestamps, ys_probs, lm_probs,
+ *                     context_scores, segment, start_time, is_final, model }
+ * C++ server JSON:  { text, tokens, timestamps, ys_probs, lm_probs, context_scores,
  *                     segment, start_time, is_final, is_eof }
  * Python server JSON: { text, segment } (no is_final — detect by segment increment)
  *
  * Finality semantics:
- *   Sherpa's is_final means "endpoint detected" (silence/pause), NOT "text might change."
- *   Sherpa interims are append-only — earlier tokens are never revised, regardless of
- *   model (Zipformer, Nemotron, etc.). So all sherpa results set isFinal: true (text is
- *   stable) and only set isEndpoint: true when the server signals is_final (utterance done).
+ *   is_final means "endpoint detected" (silence/pause), NOT "text might change."
+ *   Interims are append-only — earlier tokens are never revised, regardless of
+ *   model (Zipformer, Nemotron, Moonshine, etc.). So all results set isFinal: true
+ *   (text is stable) and only set isEndpoint: true when the server signals
+ *   is_final (utterance done).
  */
 
 import { Ok } from 'wellcrafted/result';
@@ -22,13 +25,15 @@ import { SourceErr, broadcastTranscript } from '$lib/types.js';
 import { AudioCapture } from '$lib/audio-capture.js';
 
 // ---------------------------------------------------------------------------
-// Server response shape (superset of C++ and Python servers)
+// Server response shape (superset of rift-local, C++, and Python servers)
 // ---------------------------------------------------------------------------
 
-interface SherpaServerMessage {
+interface LocalServerMessage {
 	text: string;
 	segment: number;
-	// C++ server only:
+	// rift-local adds a type discriminator:
+	type?: 'info' | 'result';
+	// C++ server / rift-local:
 	is_final?: boolean;
 	is_eof?: boolean;
 	tokens?: string[];
@@ -38,14 +43,29 @@ interface SherpaServerMessage {
 	context_scores?: number[]; // per-token hotword/context boosting log-probs
 	start_time?: number;
 	words?: unknown[];
+	// rift-local info handshake fields:
+	model?: string;
+	model_display?: string;
+	params?: string;
+	backend?: string;
+	streaming?: boolean;
+	languages?: string[];
+	features?: {
+		timestamps: boolean;
+		confidence: boolean;
+		endpoint_detection: boolean;
+		diarization: boolean;
+	};
+	sample_rate?: number;
+	version?: string;
 }
 
 // ---------------------------------------------------------------------------
-// SherpaSource
+// LocalSource
 // ---------------------------------------------------------------------------
 
-export class SherpaSource implements TranscriptionSource {
-	readonly name = 'sherpa';
+export class LocalSource implements TranscriptionSource {
+	readonly name = 'local';
 
 	/** Callback for results. Defaults to broadcastTranscript. */
 	onResult: ((result: Transcript) => void) | null = broadcastTranscript;
@@ -56,6 +76,24 @@ export class SherpaSource implements TranscriptionSource {
 
 	/** Reactive — true while WebSocket is connected. */
 	connected = $state(false);
+
+	/** Reactive — server info from the INFO handshake (rift-local only). */
+	serverInfo = $state<{
+		model: string;
+		model_display: string;
+		params: string;
+		backend: string;
+		streaming: boolean;
+		languages: string[];
+		features: {
+			timestamps: boolean;
+			confidence: boolean;
+			endpoint_detection: boolean;
+			diarization: boolean;
+		};
+		sample_rate: number;
+		version: string;
+	} | null>(null);
 
 	private serverUrl: string;
 	private audioCapture: AudioCapture;
@@ -86,6 +124,7 @@ export class SherpaSource implements TranscriptionSource {
 		this.currentSegment = -1;
 		this.nextSegmentId = 0;
 		this.lastTextBySegment.clear();
+		this.serverInfo = null;
 		this.connectAndStart();
 		return Ok(undefined);
 	}
@@ -122,7 +161,7 @@ export class SherpaSource implements TranscriptionSource {
 	}
 
 	finalize() {
-		// Sherpa has no "force endpoint" command. No-op for now.
+		// No "force endpoint" command available. No-op for now.
 		// Future: could close stream ("Done") and reopen, but that's
 		// slower than Web Speech's stop/restart. Leave as no-op initially.
 	}
@@ -137,7 +176,7 @@ export class SherpaSource implements TranscriptionSource {
 			// Wire audio capture to send binary frames
 			this.audioCapture.onAudioData = (samples: Float32Array) => {
 				if (this.ws?.readyState === WebSocket.OPEN) {
-					// Send raw Float32 buffer — sherpa expects Float32 samples
+					// Send raw Float32 buffer — server expects Float32 samples
 					this.ws.send(samples.buffer);
 				}
 			};
@@ -145,7 +184,7 @@ export class SherpaSource implements TranscriptionSource {
 			this.listening = true;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			console.error(`[SherpaSource] Failed to start: ${message}`);
+			console.error(`[LocalSource] Failed to start: ${message}`);
 
 			// Clean up partial state
 			this.audioCapture.stop();
@@ -187,7 +226,7 @@ export class SherpaSource implements TranscriptionSource {
 
 			ws.onerror = (event: Event) => {
 				if (this.ws !== ws) return;
-				console.error('[SherpaSource] WebSocket error', event);
+				console.error('[LocalSource] WebSocket error', event);
 				reject(new Error('WebSocket connection failed'));
 			};
 
@@ -205,15 +244,37 @@ export class SherpaSource implements TranscriptionSource {
 	}
 
 	private handleServerMessage(data: string) {
-		if (!this.onResult) return;
-
-		let msg: SherpaServerMessage;
+		let msg: LocalServerMessage;
 		try {
 			msg = JSON.parse(data);
 		} catch {
-			console.warn('[SherpaSource] Non-JSON message:', data);
+			console.warn('[LocalSource] Non-JSON message:', data);
 			return;
 		}
+
+		// Handle INFO handshake from rift-local
+		if (msg.type === 'info') {
+			this.serverInfo = {
+				model: msg.model ?? 'unknown',
+				model_display: msg.model_display ?? msg.model ?? 'Unknown model',
+				params: msg.params ?? '',
+				backend: msg.backend ?? 'unknown',
+				streaming: msg.streaming ?? true,
+				languages: msg.languages ?? [],
+				features: msg.features ?? {
+					timestamps: false,
+					confidence: false,
+					endpoint_detection: true,
+					diarization: false
+				},
+				sample_rate: msg.sample_rate ?? 16000,
+				version: msg.version ?? ''
+			};
+			console.info('[LocalSource] Server info:', this.serverInfo);
+			return;
+		}
+
+		if (!this.onResult) return;
 
 		// Ignore EOF marker
 		if (msg.is_eof) return;
@@ -221,7 +282,7 @@ export class SherpaSource implements TranscriptionSource {
 		const text = msg.text?.trim() ?? '';
 		const segment = msg.segment ?? 0;
 
-		// Skip empty-text messages — sherpa sends these as segment
+		// Skip empty-text messages — servers send these as segment
 		// placeholders and empty finals that would pollute committedThroughSegment
 		// tracking in TranscriptArea, blocking future interims.
 		if (!text) return;
@@ -231,10 +292,10 @@ export class SherpaSource implements TranscriptionSource {
 		const hasFinalField = 'is_final' in msg;
 
 		if (hasFinalField) {
-			// C++ server: has explicit is_final (= endpoint detected).
+			// C++ server / rift-local: has explicit is_final (= endpoint detected).
 			// Use monotonic segmentIds so TranscriptArea's
 			// committedThroughSegment rejection works correctly.
-			// Sherpa reuses server segment IDs after empty finals,
+			// Server may reuse segment IDs after empty finals,
 			// so map them to our own counter.
 			const isEndpoint = !!msg.is_final;
 			this.emitTranscript(text, this.nextSegmentId, isEndpoint, msg);
@@ -263,13 +324,13 @@ export class SherpaSource implements TranscriptionSource {
 		text: string,
 		segment: number,
 		isEndpoint: boolean,
-		raw: SherpaServerMessage
+		raw: LocalServerMessage
 	) {
 		if (!this.onResult) return;
 
-		// Build word-level detail from tokens + timestamps (C++ server).
-		// Sherpa emits BPE subword tokens (e.g. " My", " na", "me") — coalesce
-		// them into whole words so downstream consumers get clean Word objects.
+		// Build word-level detail from tokens + timestamps.
+		// BPE subword tokens (e.g. " My", " na", "me") are coalesced into
+		// whole words so downstream consumers get clean Word objects.
 		// Raw tokens remain accessible via transcript.raw.
 		let words: Word[] | undefined;
 		if (raw.tokens && raw.timestamps && raw.tokens.length === raw.timestamps.length) {
@@ -293,7 +354,7 @@ export class SherpaSource implements TranscriptionSource {
 
 			// Second pass: coalesce BPE subword tokens into whole words.
 			// BPE convention: leading whitespace = new word boundary.
-			// e.g. [" My", " na", "me"] → words ["My", "name"]
+			// e.g. [" My", " na", "me"] -> words ["My", "name"]
 			words = [];
 			let current: { texts: string[]; start: number; end: number; confidences: number[] } | null =
 				null;
@@ -349,7 +410,7 @@ export class SherpaSource implements TranscriptionSource {
 				? wordsWithConf.reduce((sum, w) => sum + w.confidence!, 0) / wordsWithConf.length
 				: undefined;
 
-		// Sherpa interims are append-only — earlier tokens never change.
+		// Interims are append-only — earlier tokens never change.
 		// isFinal: true always (text is stable), isEndpoint only on silence detection.
 		const transcript: Transcript = {
 			text,
@@ -366,14 +427,14 @@ export class SherpaSource implements TranscriptionSource {
 	}
 
 	private scheduleReconnect() {
-		if (this.restartAttempts >= SherpaSource.MAX_RESTART_ATTEMPTS) {
-			console.error(`[SherpaSource] Giving up after ${this.restartAttempts} reconnect attempts`);
+		if (this.restartAttempts >= LocalSource.MAX_RESTART_ATTEMPTS) {
+			console.error(`[LocalSource] Giving up after ${this.restartAttempts} reconnect attempts`);
 			this.shouldBeListening = false;
 			this.onError?.('reconnect-failed', 'Too many reconnect attempts');
 			return;
 		}
 
-		const delay = SherpaSource.RESTART_DELAY_MS * Math.pow(2, this.restartAttempts);
+		const delay = LocalSource.RESTART_DELAY_MS * Math.pow(2, this.restartAttempts);
 		this.restartAttempts++;
 
 		this.restartTimer = setTimeout(() => {

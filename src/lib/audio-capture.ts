@@ -2,7 +2,7 @@
  * AudioCapture — manages getUserMedia → AudioContext → AudioWorklet pipeline.
  *
  * Reusable by any non-Web-Speech source that needs raw mic audio
- * (Sherpa, Soniox, Deepgram, etc.). Delivers 16kHz Float32 chunks
+ * (local server, Soniox, Deepgram, etc.). Delivers 16kHz Float32 chunks
  * via the onAudioData callback.
  */
 

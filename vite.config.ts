@@ -8,7 +8,7 @@ export default defineConfig({
 	server: {
 		allowedHosts: ['.ngrok-free.app'],
 		proxy: {
-			'/ws/sherpa': {
+			'/ws/local': {
 				target: 'ws://localhost:6006',
 				ws: true,
 				rewriteWsOrigin: true

@@ -112,8 +112,8 @@
 
 	// Collect all words across interim segments for per-word rendering.
 	// For BPE sources, trim leading whitespace from the first token —
-	// All sources now emit whole-word Word objects (Sherpa coalesces BPE tokens
-	// in SherpaSource). interimSpaceBefore handles smart spacing at the boundary.
+	// All sources now emit whole-word Word objects (LocalSource coalesces BPE tokens
+	// internally). interimSpaceBefore handles smart spacing at the boundary.
 	let interimWords: Word[] = $derived(Array.from(interims.values()).flatMap((s) => s.words ?? []));
 
 	// Split committed text around insertion range for preview rendering.

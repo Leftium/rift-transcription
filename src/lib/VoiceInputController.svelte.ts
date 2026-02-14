@@ -2,7 +2,7 @@
  * VoiceInputController — reactive controller for voice input lifecycle.
  *
  * Encapsulates source creation, manual start/stop, and toggle UI state.
- * Supports multiple transcription sources (Web Speech API, Sherpa-ONNX, etc.).
+ * Supports multiple transcription sources (Web Speech API, local server, etc.).
  *
  * Manual mode: toggle() directly starts/stops the source. Listening persists
  * regardless of focus — no auto-pause on blur. On mobile, textareas use
@@ -16,30 +16,39 @@
 import { isErr } from 'wellcrafted/result';
 import type { TranscriptionSource } from '$lib/types.js';
 import { WebSpeechSource } from '$lib/sources/web-speech.svelte';
-import { SherpaSource } from '$lib/sources/sherpa.svelte';
+import { LocalSource } from '$lib/sources/local.svelte';
 import { DeepgramSource } from '$lib/sources/deepgram.svelte';
 
-export type SourceType = 'web-speech' | 'sherpa' | 'deepgram';
+export type SourceType = 'web-speech' | 'local' | 'deepgram';
 
 export class VoiceInputController {
 	#source: TranscriptionSource | null = $state(null);
 
 	enabled = $state(false);
 	sourceType = $state<SourceType>('web-speech');
-	sherpaUrl = $state('ws://localhost:6006');
+	localUrl = $state('ws://localhost:6006');
 	deepgramApiKey = $state('');
 
 	get listening(): boolean {
 		return this.#source?.listening ?? false;
 	}
 
-	/** Reactive — true while WebSocket is connected (sherpa/deepgram). */
+	/** Reactive — true while WebSocket is connected (local/deepgram). */
 	get connected(): boolean {
 		const s = this.#source;
 		if (s && 'connected' in s) {
-			return (s as SherpaSource | DeepgramSource).connected;
+			return (s as LocalSource | DeepgramSource).connected;
 		}
 		return false;
+	}
+
+	/** Reactive — server info from rift-local INFO handshake (null for legacy servers). */
+	get serverInfo() {
+		const s = this.#source;
+		if (s instanceof LocalSource) {
+			return s.serverInfo;
+		}
+		return null;
 	}
 
 	// --- Source lifecycle ---
@@ -48,8 +57,8 @@ export class VoiceInputController {
 		if (!this.#source) {
 			if (this.sourceType === 'deepgram') {
 				this.#source = new DeepgramSource(this.deepgramApiKey);
-			} else if (this.sourceType === 'sherpa') {
-				this.#source = new SherpaSource(this.sherpaUrl);
+			} else if (this.sourceType === 'local') {
+				this.#source = new LocalSource(this.localUrl);
 			} else {
 				this.#source = new WebSpeechSource();
 			}
@@ -97,7 +106,7 @@ export class VoiceInputController {
 		}
 		this.#source = null;
 		this.sourceType = type as SourceType;
-		if (url !== undefined) this.sherpaUrl = url;
+		if (url !== undefined) this.localUrl = url;
 		if (wasEnabled) {
 			this.enabled = true;
 			this.#start();

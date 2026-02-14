@@ -107,16 +107,16 @@
 </script>
 
 <main>
-	<div class="sticky-header">
-		<h1>RIFT TranscribeArea</h1>
-		<p class="intro">
-			Voice input that works like a textarea. Enable voice input, then focus any input below and
-			speak. See the <a
-				href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
-				>spec</a
-			> for details.
-		</p>
+	<h1>RIFT TranscribeArea</h1>
+	<p class="intro">
+		Voice input that works like a textarea. Enable voice input, then focus any input below and
+		speak. See the <a
+			href="https://github.com/Leftium/rift-transcription/blob/main/specs/rift-transcription.md#transcribearea-textarea-shaped-voice-input"
+			>spec</a
+		> for details.
+	</p>
 
+	<div class="sticky-header">
 		<div class="controls">
 			<select
 				value={voice.sourceType}

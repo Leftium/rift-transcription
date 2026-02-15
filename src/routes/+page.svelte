@@ -309,11 +309,24 @@
 	// Persist Deepgram API key and source type in localStorage
 	const DG_KEY = 'deepgram-api-key';
 	const SOURCE_TYPE_KEY = 'source-type';
+	const VALID_SOURCES = new Set(['web-speech', 'local', 'deepgram']);
 	onMount(() => {
 		voice.deepgramApiKey = localStorage.getItem(DG_KEY) ?? '';
 		const savedSource = localStorage.getItem(SOURCE_TYPE_KEY);
 		if (savedSource) {
 			voice.setSource(savedSource);
+		}
+
+		// URL params override localStorage (e.g. ?source=local&url=ws://localhost:3000)
+		const params = new URLSearchParams(window.location.search);
+		const source = params.get('source');
+		if (source && VALID_SOURCES.has(source)) {
+			voice.setSource(source);
+			localStorage.setItem(SOURCE_TYPE_KEY, source);
+			const url = params.get('url');
+			if (url) voice.localUrl = url;
+			const key = params.get('key');
+			if (key) setDeepgramKey(key);
 		}
 	});
 

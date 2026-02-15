@@ -1,6 +1,7 @@
 <script lang="ts">
 	const codeBlocks: Record<string, string> = {
 		install: `pip install rift-local[sherpa,moonshine]`,
+		'serve-open': `rift-local serve --open`,
 		serve: `rift-local serve`,
 		'serve-sherpa': `rift-local serve --asr zipformer-en-kroko`,
 		'serve-moonshine-small': `rift-local serve --asr moonshine-en-small`,
@@ -47,15 +48,15 @@
 	</div>
 
 	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('serve')}>
-			{copiedId === 'serve' ? '✓' : 'Copy'}
+		<button class="copy-btn" onclick={() => copyCode('serve-open')}>
+			{copiedId === 'serve-open' ? '✓' : 'Copy'}
 		</button>
-		<pre><code>{codeBlocks['serve']}</code></pre>
+		<pre><code>{codeBlocks['serve-open']}</code></pre>
 	</div>
 
 	<p class="quick-note">
-		That's it! The server will start on <code>ws://localhost:2177</code> using
-		<code>moonshine-en-medium</code>.
+		That's it! Your browser will open with the Local source pre-selected. Click Enable Voice Input
+		to start.
 	</p>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -78,6 +79,18 @@
 
 		{#if showAdvanced}
 			<div class="advanced-content">
+				<h4>Server Only (no browser)</h4>
+				<div class="code-block">
+					<button class="copy-btn" onclick={() => copyCode('serve')}>
+						{copiedId === 'serve' ? '✓' : 'Copy'}
+					</button>
+					<pre><code>{codeBlocks['serve']}</code></pre>
+				</div>
+				<p>
+					Starts the server on <code>ws://localhost:2177</code> using
+					<code>moonshine-en-medium</code> without opening a browser.
+				</p>
+
 				<h4>Using Different Models</h4>
 				<p>Use a lighter sherpa-onnx model:</p>
 				<div class="code-block">

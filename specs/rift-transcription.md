@@ -425,6 +425,8 @@ recognition.onresult = (event) => {
 - No native `finalize` (can fake via stop + restart, higher latency)
 - Browser-specific behavior (Chrome vs Safari vs Firefox)
 
+**Audio capture:** `capturesSelf = true` — browser's `SpeechRecognition` handles mic internally. No `pushAudio`. The controller runs `AudioCapture` in parallel for recording only.
+
 **Best for:** Demos, quick prototyping, users who don't want to install anything.
 
 ### Sherpa (sherpa-onnx)
@@ -446,6 +448,8 @@ type SherpaSource = {
 - Force endpoint (`finalize`) ✓
 - Works offline ✓
 - Customizable models ✓
+
+**Audio capture:** `capturesSelf = false` — receives 16kHz Float32 samples via `pushAudio()`, forwarded to local sherpa-onnx server (or rift-local) over WebSocket.
 
 **Best for:** Research, latency-sensitive use cases, privacy-conscious users.
 
@@ -492,7 +496,9 @@ Medium beats Whisper Large v3 (7.44% WER, 1.5B params) with 6x fewer parameters.
 - Streaming models English-only (7 other languages have non-streaming v1 models)
 - Not optimized for GPU batch throughput
 
-**Integration path for RIFT:** A thin Python WebSocket bridge (`moonshine_voice.MicTranscriber` → WebSocket server) is the simplest approach. The `LineStarted`/`LineTextChanged`/`LineCompleted` event model maps naturally to RIFT's `Transcript` type, similar to how Web Speech API's `onresult` is mapped today.
+**Integration path for RIFT:** Served via rift-local, which wraps Moonshine's push API behind the standard WebSocket protocol. The `LineStarted`/`LineTextChanged`/`LineCompleted` event model maps naturally to RIFT's `Transcript` type.
+
+**Audio capture:** `capturesSelf = false` — receives samples via `pushAudio()`, forwarded to rift-local over WebSocket (same as Sherpa).
 
 **Best for:** Edge deployment with diarization, smallest possible models, privacy-first use cases where speaker identification matters.
 
@@ -532,6 +538,8 @@ type SonioxSource = {
 3. Token-level streaming is closer to word-level ProseMirror operations than transcript-level replacements
 4. Speaker diarization available in real-time (not batch-only like Voxtral)
 
+**Audio capture:** `capturesSelf = false` — receives samples via `pushAudio()`, converts and sends to Soniox WebSocket.
+
 **Best for:** Production RIFT deployment where cursor interrupts and semantic endpointing matter.
 
 ### Voxtral Realtime (Mistral)
@@ -565,6 +573,8 @@ type VoxtralSource = {
 - Context biasing English-optimized
 - Fewer languages than ElevenLabs (13) or Soniox (60+)
 
+**Audio capture:** `capturesSelf = false` — receives samples via `pushAudio()`, converts and sends to Voxtral WebSocket.
+
 **Best for:** Production streaming when cost matters, future self-hosting path.
 
 ### ElevenLabs Scribe
@@ -590,6 +600,8 @@ type ScribeSource = {
 - Up to 48 speakers diarization (batch)
 - Entity detection for compliance (56 categories)
 
+**Audio capture:** `capturesSelf = false` — receives samples via `pushAudio()`, converts and sends to ElevenLabs WebSocket.
+
 **Best for:** Production use when language coverage or diarization matters.
 
 ### Unified Interface
@@ -614,6 +626,16 @@ interface TranscriptionSource {
 	startListening(): Result<void, TranscriptionError>;
 	stopListening(): Result<void, TranscriptionError>;
 	finalize(): void; // Force endpoint without stopping (RIFT addition — not in transcription-rs)
+
+	// Receive audio samples from external capture.
+	// WebSocket-based sources forward to their backend.
+	// Browser-native sources (WebSpeech) omit this — they capture internally.
+	pushAudio?(samples: Float32Array): void;
+
+	// True if this source manages its own audio capture (e.g., WebSpeech).
+	// When true, the controller still runs AudioCapture in parallel for recording,
+	// but doesn't expect the source to receive audio via pushAudio.
+	readonly capturesSelf: boolean;
 
 	onResult: (result: Transcript) => void;
 }
@@ -888,6 +910,127 @@ Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
 - Utterance tracker handles source changes transparently
 - UI shows which source produced each segment (optional)
 - Replace text in ProseMirror when batch result arrives
+
+### Externalized Audio Capture
+
+Audio capture is owned by the controller (not by individual sources), enabling recording, source sharing, and batch re-transcription.
+
+#### Problem
+
+If each WebSocket-based source creates its own `AudioCapture` internally:
+
+1. **No recorded audio.** The span model requires `audioRef` + `timeRange` on ProseMirror marks for playback, re-transcription, and time-travel undo. Audio flows through sources and is discarded — nothing to reference.
+2. **Duplicated capture.** Every WebSocket source repeats the same `getUserMedia` → `AudioWorklet` → `onAudioData` → `ws.send()` wiring. Every future source will copy it.
+3. **No audio sharing.** Hot-swapping sources requires each to open its own mic. Feeding non-mic audio (file playback, re-transcription) is impossible since sources assume `getUserMedia`.
+
+#### Design
+
+The controller captures audio once, records it, and distributes samples to whichever source is active:
+
+```
+VoiceInputController (owns AudioCapture + RecordingBuffer)
+  │
+  │  audioCapture.onAudioData = (samples) => {
+  │    recordingBuffer.write(samples);      // always persist
+  │    source.pushAudio?.(samples);         // feed active source
+  │  };
+  │
+  ├── AudioCapture (single mic pipeline, started/stopped by controller)
+  │
+  ├── RecordingBuffer (persists audio, generates audioRef + timeRange)
+  │
+  └── TranscriptionSource (receives audio via pushAudio, emits Transcript via onResult)
+        ├── LocalSource.pushAudio(samples)     → ws.send(samples.buffer)
+        ├── DeepgramSource.pushAudio(samples)  → ws.send(float32ToInt16(samples).buffer)
+        └── WebSpeechSource                    → no pushAudio (browser owns mic)
+```
+
+Sources that need audio implement `pushAudio(samples: Float32Array)` and set `capturesSelf = false`. They no longer create `AudioCapture` instances — `startListening()` only opens the WebSocket, `stopListening()` only closes it. Audio arrives via `pushAudio`.
+
+`WebSpeechSource` sets `capturesSelf = true` and omits `pushAudio`. The browser's `SpeechRecognition` captures its own mic internally. The controller still runs `AudioCapture` in parallel for recording — two mic streams from the same device is fine (the OS shares the hardware). The parallel stream provides audio for the `RecordingBuffer` that WebSpeech can't expose.
+
+#### RecordingBuffer
+
+```typescript
+class RecordingBuffer {
+	private chunks: { samples: Float32Array; timestamp: number }[] = [];
+	private recordingId: string = generateId();
+	private startTime: number = 0;
+
+	write(samples: Float32Array): void {
+		if (this.chunks.length === 0) this.startTime = Date.now();
+		this.chunks.push({ samples, timestamp: Date.now() });
+	}
+
+	/** Current recording ID (for audioRef on ProseMirror marks). */
+	get currentRecordingId(): string {
+		return this.recordingId;
+	}
+
+	/** Elapsed time in seconds (for timeRange on marks). */
+	get elapsed(): number {
+		return (Date.now() - this.startTime) / 1000;
+	}
+
+	/** Extract audio for a time range (for re-transcription / playback). */
+	getAudioForRange(start: number, end: number): Float32Array {
+		/* ... */
+	}
+
+	/** Export as WAV/WebM for persistence. */
+	async export(): Promise<Blob> {
+		/* ... */
+	}
+}
+```
+
+#### Hot-Swap Without Audio Gap
+
+During source hot-swap, `AudioCapture` never stops. The mic stays open, the recording continues, only the `pushAudio` target changes:
+
+```typescript
+setSource(type: SourceType) {
+	const wasEnabled = this.enabled;
+	if (wasEnabled) this.#source?.stopListening();  // stop source, NOT audio
+	this.#source = null;
+	this.sourceType = type;
+	if (wasEnabled) {
+		const s = this.#ensureSource();
+		s.startListening();
+		// AudioCapture still running — just rewire pushAudio to new source
+		this.#audioCapture.onAudioData = (samples) => {
+			this.#recordingBuffer.write(samples);
+			s.pushAudio?.(samples);
+		};
+	}
+}
+```
+
+No gap in audio, no mic permission re-prompts.
+
+#### Batch Re-Transcription Flow
+
+When the user selects text and clicks "Enhance Transcription":
+
+1. Extract audio refs from ProseMirror marks in the selection
+2. Get the corresponding audio from `RecordingBuffer.getAudioForRange()`
+3. Open a second WebSocket to rift-local with `?asr=batch-model&mode=batch`
+4. Send the recorded audio at read speed via `pushAudio()`
+5. `mode=batch` tells rift-local to suppress interims (only send finals with endpoint data)
+6. Collect final segments, replace ProseMirror selection with the result
+
+Progress is calculated client-side: RIFT knows total audio duration from the buffer and tracks how much has been sent / how far results have progressed via `start_time` on returned transcripts.
+
+#### What This Enables
+
+| Feature (from spec)             | Requires                       | Before                   | After                                       |
+| ------------------------------- | ------------------------------ | ------------------------ | ------------------------------------------- |
+| `audioRef` on ProseMirror marks | Recorded audio with IDs        | No audio retained        | `RecordingBuffer` provides IDs + timestamps |
+| Re-transcription (Enhance)      | Audio for arbitrary selections | No audio available       | `RecordingBuffer.getAudioForRange()`        |
+| Audio playback in edited order  | Stored audio clips             | No audio stored          | `RecordingBuffer` + export                  |
+| Hot-swap without audio gap      | Shared mic stream              | Each source restarts mic | `AudioCapture` stays running                |
+| Feed file/recorded audio        | External audio source          | Impossible               | `pushAudio()` accepts any samples           |
+| Testing with fixture audio      | Inject known samples           | Impossible               | `pushAudio()` directly                      |
 
 ---
 

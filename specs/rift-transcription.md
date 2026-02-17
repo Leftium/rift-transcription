@@ -383,13 +383,13 @@ RIFT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
 ## Transcription Sources
 
-Six sources with different tradeoffs:
+Seven sources with different tradeoffs:
 
 | Source                | Purpose                               | Latency             | Accuracy        | Setup         | Price       |
 | --------------------- | ------------------------------------- | ------------------- | --------------- | ------------- | ----------- |
 | **Web Speech API**    | Zero-config demo, broad compatibility | Medium (~300-500ms) | Good            | None          | Free        |
-| **Sherpa**            | Research, optimal latency, offline    | Low (~100-200ms)    | Good (~4-6%)    | Local install | Free        |
-| **Moonshine v2**      | Edge, diarization, smallest models    | Very low (50-258ms) | Excellent (~7%) | Local install | Free        |
+| **Local Server**      | Local inference, multiple backends    | Low (~100-258ms)    | Good–Excellent  | Local install | Free        |
+| **Deepgram**          | Cloud streaming, high accuracy        | Low (~200-300ms)    | Excellent       | API key       | ~$0.005/min |
 | **Soniox v4**         | Production streaming, best RIFT fit   | Very low (<100ms)   | Excellent       | API key       | $0.002/min  |
 | **Voxtral Realtime**  | Production streaming, best value      | Very low (<200ms)   | Excellent (~4%) | API key       | $0.006/min  |
 | **ElevenLabs Scribe** | Production accuracy, most languages   | Low (~150ms)        | Excellent (~6%) | API key       | ~$0.015/min |
@@ -429,78 +429,105 @@ recognition.onresult = (event) => {
 
 **Best for:** Demos, quick prototyping, users who don't want to install anything.
 
-### Sherpa (sherpa-onnx)
+### Local Server
 
-Local ASR via WebAssembly or native. Full control, no network dependency.
+Local ASR via WebSocket. A single `LocalSource` client connects to a local server on `ws://localhost:2177` and handles any backend — sherpa-onnx, Moonshine, future models. The client auto-detects the server's protocol variant (rift-local vs legacy sherpa C++).
 
 ```typescript
-type SherpaSource = {
-	type: 'sherpa';
-	modelPath: string;
-	// Supports word-level timestamps, confidence scores, force endpoint
+type LocalSource = {
+	type: 'local';
+	serverUrl?: string; // default: 'ws://localhost:2177'
 };
 ```
 
-**Capabilities:**
+**Audio capture:** `capturesSelf = false` — receives 16kHz Float32 samples via `pushAudio()`, forwarded to the local server over WebSocket.
 
-- Word-level timestamps ✓
-- Confidence scores ✓
-- Force endpoint (`finalize`) ✓
-- Works offline ✓
-- Customizable models ✓
+**Best for:** Research, latency-sensitive use cases, privacy-conscious users, offline use.
 
-**Audio capture:** `capturesSelf = false` — receives 16kHz Float32 samples via `pushAudio()`, forwarded to local sherpa-onnx server (or rift-local) over WebSocket.
+#### rift-local (recommended)
 
-**Best for:** Research, latency-sensitive use cases, privacy-conscious users.
+[rift-local](https://github.com/Leftium/rift-local) is a Python server that unifies local ASR backends behind one WebSocket + HTTP protocol. It replaces the legacy sherpa C++ WebSocket server and serves as the bridge for engines that lack a built-in WS server (Moonshine, future backends).
 
-### Moonshine v2 (Moonshine AI)
+**Capabilities (over legacy sherpa C++ server):**
 
-Local ASR with built-in diarization, VAD, and intent recognition in a single cross-platform library. Very small models with competitive accuracy.
+- `info` handshake with model metadata (name, params, backend, capabilities) ✓
+- Full field serialization (tokens, timestamps, log-probs, `is_final`) ✓
+- Multiple backend engines (sherpa-onnx, Moonshine, future: mlx-whisper, Qwen3-ASR) ✓
+- Multi-model loading (`--asr` repeatable) — streaming + batch on same server ✓ (Phase 2)
+- Batch re-transcription via `mode=batch` ✓ (Phase 2)
+- HTTP `POST /transcribe` for file transcription ✓ (Phase 2)
+- LLM transforms via `POST /transform` ✓ (Phase 3)
+- Auto-download of models with progress bar ✓
 
-```typescript
-type MoonshineSource = {
-	type: 'moonshine';
-	// No native WebSocket server — requires a bridge (Python or future WASM)
-	bridgeUrl?: string; // e.g., 'ws://localhost:8765'
-	modelSize?: 'tiny' | 'small' | 'medium';
-};
-```
+See [rift-local spec](https://github.com/Leftium/rift-local/blob/main/specs/rift-local.md) for full details.
 
-**Architecture:** Sliding-window streaming encoder (genuinely streaming, not chunked batch) with autoregressive decoder. Encoder caches previous computations and processes new audio incrementally with only 80ms lookahead. See [Moonshine v2 paper (arXiv:2602.12241)](https://arxiv.org/abs/2602.12241).
+**Available backends and models:**
 
-**Capabilities:**
+| Backend     | Models                                    | Streaming  | Latency    |
+| ----------- | ----------------------------------------- | ---------- | ---------- |
+| sherpa-onnx | Nemotron 0.6B, Zipformer                  | Yes        | ~100-200ms |
+| Moonshine   | Tiny (34M), Small (123M), Medium (245M)   | Yes        | 50-258ms   |
+| sherpa-onnx | Parakeet TDT 0.6B v2/v3                   | No (batch) | N/A        |
+| mlx-whisper | Whisper Large v3 Turbo, etc. (macOS only) | No (batch) | N/A        |
 
-- Segment-level timestamps (`start_time`, `duration`) — **no word-level timestamps**
-- Built-in speaker diarization (`speaker_id` on `LineCompleted` events) ✓
-- Built-in VAD ✓
-- Built-in intent recognition (semantic fuzzy matching via Gemma 300M embeddings) ✓
-- Works offline ✓
-- Event-based API: `LineStarted` / `LineTextChanged` / `LineCompleted`
-- Interims may be revised (non-monotonic) — similar to Web Speech API
+**Moonshine models** are served via rift-local, which wraps Moonshine's push API (`LineStarted`/`LineTextChanged`/`LineCompleted`) behind the standard pull-based WebSocket protocol. Moonshine provides built-in diarization, VAD, and intent recognition. Segment-level timestamps only (no per-word). Non-monotonic interims. English streaming only. See [Moonshine v2 paper (arXiv:2602.12241)](https://arxiv.org/abs/2602.12241).
 
-**Models (English streaming):**
-
-| Model  | Params | WER    | Latency (M3 CPU) |
-| ------ | ------ | ------ | ---------------- |
-| Tiny   | 34M    | 12.00% | 50ms             |
-| Small  | 123M   | 7.84%  | 148ms            |
-| Medium | 245M   | 6.65%  | 258ms            |
+| Moonshine Model | Params | WER    | Latency (M3 CPU) |
+| --------------- | ------ | ------ | ---------------- |
+| Tiny            | 34M    | 12.00% | 50ms             |
+| Small           | 123M   | 7.84%  | 148ms            |
+| Medium          | 245M   | 6.65%  | 258ms            |
 
 Medium beats Whisper Large v3 (7.44% WER, 1.5B params) with 6x fewer parameters.
 
+#### sherpa-onnx C++ server (legacy)
+
+The sherpa-onnx project provides a standalone C++ WebSocket server (`sherpa-onnx-online-websocket-server`). It also binds to `ws://localhost:2177` by default, so `LocalSource` connects to it the same way. Setup instructions are documented at the `/sherpa` route in the RIFT app.
+
+**Differences from rift-local:**
+
+- No `info` handshake — client cannot display model name or capabilities
+- No `type` field on messages — `LocalSource` detects this and falls back to legacy parsing
+- Python variant drops fields (only sends `text` + `segment`, no timestamps/tokens/log-probs)
+- Sherpa-onnx models only — no Moonshine, no batch models, no LLM transforms
+
+`LocalSource` handles both servers transparently: if the first message has `"type": "info"`, it's rift-local; otherwise it's the legacy C++ server.
+
+### Deepgram
+
+Cloud streaming ASR via WebSocket. High accuracy, word-level timestamps, three-tier finality model.
+
+```typescript
+type DeepgramSource = {
+	type: 'deepgram';
+	apiKey: string;
+	model?: string; // default: 'nova-3'
+};
+```
+
+**WebSocket URL:** `wss://api.deepgram.com/v1/listen` (auth via WebSocket subprotocol `['token', apiKey]`)
+
+**Audio format:** Int16 PCM (linear16) at 16kHz mono. `pushAudio()` receives Float32 from `AudioCapture` and converts to Int16 before sending.
+
+**Key features:**
+
+- **Three-tier finality** — `speech_final` (natural endpoint/commit), `is_final` (stable partial, won't be revised, but utterance continues), and plain interim (may be revised). Maps to: `speech_final` → `isFinal: true, isEndpoint: true`; `is_final` → accumulated text, `isFinal: false`; interim → `isFinal: false`.
+- **`Finalize` command** — send `{"type": "Finalize"}` over WebSocket to flush buffered audio and get a final transcript. Maps directly to RIFT's `finalize()`.
+- **Word-level timestamps and confidence** — `punctuated_word`, `start`, `end`, `confidence` per word
+- **Smart formatting** — automatic punctuation, capitalization, numerals
+- **Nova-3 model** — latest generation, strong accuracy across domains
+
+**Pricing:** ~$0.005/min (Pay As You Go tier).
+
 **Limitations:**
 
-- No WebSocket server mode — needs a Python bridge or future WASM build for browser integration
-- No word-level timestamps (only segment-level) — RIFT's per-word confidence coloring won't work
-- Non-monotonic interims — text may be revised before `LineCompleted`, requiring `isFinal`/`isEndpoint` handling similar to Web Speech
-- Streaming models English-only (7 other languages have non-streaming v1 models)
-- Not optimized for GPU batch throughput
+- Requires internet + API key
+- No real-time diarization in streaming mode (available in batch)
+- `speech_final` depends on silence detection, not semantic endpointing
 
-**Integration path for RIFT:** Served via rift-local, which wraps Moonshine's push API behind the standard WebSocket protocol. The `LineStarted`/`LineTextChanged`/`LineCompleted` event model maps naturally to RIFT's `Transcript` type.
+**Audio capture:** `capturesSelf = false` — receives samples via `pushAudio()`, converts Float32 → Int16 PCM, sends to Deepgram WebSocket.
 
-**Audio capture:** `capturesSelf = false` — receives samples via `pushAudio()`, forwarded to rift-local over WebSocket (same as Sherpa).
-
-**Best for:** Edge deployment with diarization, smallest possible models, privacy-first use cases where speaker identification matters.
+**Best for:** Cloud streaming when you need word-level detail and don't need Soniox's semantic endpointing.
 
 ### Soniox v4 Real-Time
 
@@ -621,7 +648,7 @@ type TranscriptionError = ReturnType<typeof TranscriptionError>;
 // Source interface (aligned with transcription-rs naming: "Source" = push-based, "Engine" = pull-based)
 // See: https://github.com/Leftium/transcribe-rs/blob/docs/streaming-api-spec/specs/transcription-rs.md
 interface TranscriptionSource {
-	readonly name: string; // 'web-speech' | 'sherpa' | 'moonshine' | 'soniox' | 'voxtral' | 'scribe'
+	readonly name: string; // 'web-speech' | 'local' | 'deepgram' | 'soniox' | 'voxtral' | 'scribe'
 
 	startListening(): Result<void, TranscriptionError>;
 	stopListening(): Result<void, TranscriptionError>;
@@ -709,32 +736,33 @@ type Word = {
 
 **Source capability matrix:**
 
-| Field          | Web Speech           | Sherpa  | Moonshine v2      | Soniox v4      | Voxtral | Scribe  |
-| -------------- | -------------------- | ------- | ----------------- | -------------- | ------- | ------- |
-| `text`         | ✓                    | ✓       | ✓                 | ✓              | ✓       | ✓       |
-| `isFinal`      | ✓                    | ✓       | ✓ (LineCompleted) | ✓ (per-token)  | ✓       | ✓       |
-| `isEndpoint`   | forced only          | ✓       | ✓ (LineCompleted) | ✓ (semantic)   | ✓       | ✓       |
-| `segmentId`    | ✓ (client-generated) | ✓       | ✓ (lineId)        | ✓              | ✓       | ✓       |
-| `start`/`end`  | ✗                    | ✓       | segment only      | ✓              | ✓       | ✓       |
-| `words`        | ✗                    | ✓       | ✗                 | ✓ (tokens)     | segment | ✓       |
-| `confidence`   | ✗                    | ✓       | ✗                 | ?              | ?       | ✓       |
-| `speaker`      | ✗                    | ✗       | ✓ (built-in)      | ✓ (real-time)  | batch   | batch   |
-| `monotonic`    | No                   | **Yes** | No                | No             | ?       | ?       |
-| `alternatives` | ✗                    | ✗       | ✗                 | ✗              | ✗       | ✗       |
-| `finalize`     | fake (stop+restart)  | ✓       | ✓ (stop)          | ✓ (ms-latency) | ✓       | ✓       |
-| Languages      | browser-dependent    | 10+     | 8 (EN streaming)  | 60+            | 13      | 90+     |
-| Price/min      | free                 | free    | free              | $0.002         | $0.006  | ~$0.015 |
+| Field          | Web Speech           | Local (sherpa)  | Local (Moonshine) | Deepgram             | Soniox v4      | Voxtral | Scribe  |
+| -------------- | -------------------- | --------------- | ----------------- | -------------------- | -------------- | ------- | ------- |
+| `text`         | ✓                    | ✓               | ✓                 | ✓                    | ✓              | ✓       | ✓       |
+| `isFinal`      | ✓                    | ✓               | ✓ (LineCompleted) | ✓ (three-tier)       | ✓ (per-token)  | ✓       | ✓       |
+| `isEndpoint`   | forced only          | ✓               | ✓ (LineCompleted) | ✓ (speech_final)     | ✓ (semantic)   | ✓       | ✓       |
+| `segmentId`    | ✓ (client-generated) | ✓               | ✓ (lineId)        | ✓ (client-generated) | ✓              | ✓       | ✓       |
+| `start`/`end`  | ✗                    | ✓               | segment only      | ✓                    | ✓              | ✓       | ✓       |
+| `words`        | ✗                    | ✓               | ✗                 | ✓                    | ✓ (tokens)     | segment | ✓       |
+| `confidence`   | ✗                    | model-dependent | ✗                 | ✓                    | ?              | ?       | ✓       |
+| `speaker`      | ✗                    | ✗               | ✓ (built-in)      | batch only           | ✓ (real-time)  | batch   | batch   |
+| `monotonic`    | No                   | **Yes**         | No                | No                   | No             | ?       | ?       |
+| `alternatives` | ✗                    | ✗               | ✗                 | ✗                    | ✗              | ✗       | ✗       |
+| `finalize`     | fake (stop+restart)  | no-op           | ✓ (stop)          | ✓ (Finalize msg)     | ✓ (ms-latency) | ✓       | ✓       |
+| Languages      | browser-dependent    | model-dependent | EN streaming      | 36+                  | 60+            | 13      | 90+     |
+| Price/min      | free                 | free            | free              | ~$0.005              | $0.002         | $0.006  | ~$0.015 |
 
 **Notes:**
 
 - **`monotonic`** = interim results are append-only (earlier tokens/words are never revised). When `Yes`, all interims can be treated as `isFinal: true` for display purposes (sherpa-onnx transducer models). When `No`, the source may revise earlier text in subsequent interims — the UI must track `segmentId` and replace previous interim text.
+- **Local (sherpa)** and **Local (Moonshine)** are both served by `LocalSource` connecting to rift-local (or legacy sherpa C++ server). The capability differences are backend-dependent — rift-local reports them via the `info` handshake `features` field.
+- **Local confidence** is model-dependent: sherpa-onnx Zipformer provides per-token log-probs; NeMo transducers (Nemotron, Parakeet) do not. rift-local reports this via `features.confidence` in the `info` handshake.
+- **Deepgram** has three-tier finality: `speech_final` (endpoint/commit) → `is_final` (stable, won't revise) → interim (may revise). `DeepgramSource` accumulates `is_final` partials within a speech turn and commits on `speech_final`.
 - Web Speech API's `finalize()` implemented as stop + restart (higher latency)
 - Web Speech lacks timing/word data — utterance tracker treats full transcript as single segment
 - Soniox streams individual tokens with `is_final` flags (not full-transcript replacements)
 - Voxtral provides segment-level timestamps; word-level granularity TBD
-- Moonshine v2 provides segment-level `start_time` + `duration` but no per-word timestamps or confidence
-- Moonshine v2 has built-in diarization and intent recognition — unique among local/free sources
-- `speaker` row shows diarization availability (same data that was previously in a separate "Diarization" row)
+- Moonshine provides segment-level `start_time` + `duration` but no per-word timestamps or confidence; has built-in diarization and intent recognition — unique among local/free sources
 - `alternatives` not yet available from any streaming source we support; future addition
 - Uses WellCrafted Result type for explicit error handling
 
@@ -747,14 +775,14 @@ const { SourceError, SourceErr } = createTaggedError('SourceError');
 type SourceError = ReturnType<typeof SourceError>;
 
 function detectSource(): Result<TranscriptionSource, SourceError> {
-	// Prefer Sherpa if available (e.g., WASM loaded, native module present)
-	if (isSherpaAvailable()) {
-		return Ok(createSherpaSource(config));
+	// Prefer local server if available (rift-local or sherpa C++ — best latency, offline, rich data)
+	if (isLocalServerAvailable()) {
+		return Ok(createLocalSource(config));
 	}
 
-	// Prefer Moonshine if bridge available (diarization, smallest models)
-	if (isMoonshineAvailable()) {
-		return Ok(createMoonshineSource(config));
+	// Prefer Deepgram if API key configured (proven cloud source, word-level detail)
+	if (config.deepgramApiKey) {
+		return Ok(createDeepgramSource(config));
 	}
 
 	// Prefer Soniox if API key configured (best RIFT fit: finalize + semantic endpointing)
@@ -791,8 +819,8 @@ function selectSource(config: Config): Result<TranscriptionSource, SourceError> 
 
 **Priority order:**
 
-1. Sherpa (if available) — best latency, offline, word-level timestamps, monotonic interims
-2. Moonshine (if bridge available) — diarization, smallest models, edge-first
+1. Local server (if available) — best latency, offline, multiple backends (sherpa, Moonshine), monotonic interims, batch re-transcription via rift-local
+2. Deepgram (if API key configured) — proven cloud streaming, word-level timestamps, three-tier finality
 3. Soniox (if API key configured) — best RIFT fit (ms-finalize, semantic endpointing, token streaming)
 4. Voxtral (if API key configured) — best price/performance, future self-hosting
 5. Scribe (if API key configured) — most languages, code-switching
@@ -1622,23 +1650,23 @@ They support multiple speakers per document via `paragraph_start.speaker`. The U
 
 ## Implementation Order
 
-Start with **Web Speech API**, then add production sources:
+| Phase | Source       | Status   | Why                                                        |
+| ----- | ------------ | -------- | ---------------------------------------------------------- |
+| 1     | Web Speech   | **Done** | Zero setup, fast iteration, proves architecture            |
+| 2     | Local Server | **Done** | Word timestamps, offline, multiple backends via rift-local |
+| 2b    | Deepgram     | **Done** | Cloud streaming, word-level detail, three-tier finality    |
+| 3a    | Soniox       | Planned  | Best RIFT fit: ms-finalize, semantic endpointing, tokens   |
+| 3b    | Voxtral      | Planned  | Alternative: best price/performance (~$0.006/min)          |
+| 3c    | Scribe       | Planned  | Alternative if 90+ languages or diarization needed         |
 
-| Phase | Source     | Why                                                      |
-| ----- | ---------- | -------------------------------------------------------- |
-| 1     | Web Speech | Zero setup, fast iteration, proves architecture          |
-| 2     | Sherpa     | Adds word timestamps, real `finalize`, offline support   |
-| 2b    | Moonshine  | Adds diarization, smallest models, edge-first            |
-| 3a    | Soniox     | Best RIFT fit: ms-finalize, semantic endpointing, tokens |
-| 3b    | Voxtral    | Alternative: best price/performance (~$0.006/min)        |
-| 3c    | Scribe     | Alternative if 90+ languages or diarization needed       |
+**Phases 1–2b are complete.** Web Speech, Local Server (rift-local + legacy sherpa C++), and Deepgram are all implemented and working.
 
 **Why Web Speech first:**
 
 - **5 lines to first result** — no WASM loading, no model downloads
-- **No server required** — Sherpa/Soniox/Voxtral/Scribe WebSocket APIs work but need audio capture setup
-- **Handles its own audio** — Web Speech connects directly to mic; other APIs need audio capture (`getUserMedia` → `AudioWorklet` → WebSocket). Doesn't affect our unified `Transcript` interface, but adds implementation work.
-- **Architecture is source-agnostic** — Sherpa adds optional fields (`words[]`, `confidence`), doesn't change shape
+- **No server required** — all other sources need WebSocket connections and audio capture setup
+- **Handles its own audio** — Web Speech connects directly to mic; other sources receive audio via `pushAudio()` from the controller's `AudioCapture`
+- **Architecture is source-agnostic** — Local/Deepgram add optional fields (`words[]`, `confidence`), doesn't change shape
 - **Becomes the fallback anyway** — work isn't thrown away
 
 **Why Soniox for Phase 3a:**
@@ -1646,7 +1674,7 @@ Start with **Web Speech API**, then add production sources:
 - **Manual finalization in milliseconds** — send `finalize`, get high-accuracy finals instantly. Critical for RIFT's cursor interrupt flow where latency during utterance draining directly impacts UX.
 - **Semantic endpointing** — understands thought completion, not just silence. Prevents premature cuts during phone numbers, addresses, deliberate pauses. Configurable via `max_endpoint_delay_ms`.
 - **Token-level `is_final` streaming** — individual tokens arrive with finality flags, mapping naturally to ProseMirror's per-word marks. Other APIs send full-transcript replacements.
-- **Cheapest cloud streaming** — ~$0.002/min vs $0.006 (Voxtral) and ~$0.015 (Scribe)
+- **Cheapest cloud streaming** — ~$0.002/min vs $0.005 (Deepgram), $0.006 (Voxtral), ~$0.015 (Scribe)
 - **60+ languages** with real-time diarization and translation
 
 **When to use Voxtral instead:**
@@ -1664,12 +1692,11 @@ Start with **Web Speech API**, then add production sources:
 
 - All sources implement the same `Transcript` type shape
 - The hard part (cursor interrupt, draining, timestamp filtering) is source-agnostic
-- `finalize` behavioral difference (Web Speech fakes via stop+restart) doesn't affect utterance tracker logic
+- `finalize` behavioral difference (Web Speech fakes via stop+restart, Local is no-op) doesn't affect utterance tracker logic
 
 ## Open Questions / Next Steps
 
-- Test latency of force-endpoint across different ASR APIs (Sherpa, Soniox, Voxtral, ElevenLabs Scribe)
-- Handle Web Speech API's lack of word timestamps gracefully
+- Test latency of force-endpoint across different ASR APIs (Soniox, Voxtral, ElevenLabs Scribe)
 - Visual treatment of interim text (underline style, fading)
 - How corrections feed back to ASR (contextual biasing / personal dictionary)
 - Evaluate Soniox's `context` feature (domain, topic, terms) for domain adaptation during streaming
@@ -1679,6 +1706,7 @@ Start with **Web Speech API**, then add production sources:
 - Experiment with different commit triggers and timing thresholds
 - Consider OTIO (OpenTimelineIO) export for interop with video editors
 - Monitor community tooling for Voxtral self-hosting (sherpa-onnx integration, etc.)
-- Evaluate Moonshine v2 Python WebSocket bridge feasibility and latency overhead
-- Test Moonshine v2 diarization quality for RIFT's speaker attribution use case
+- Test Moonshine diarization quality for RIFT's speaker attribution use case (via rift-local)
 - Monitor Moonshine for word-level timestamps and WASM/browser deployment support
+- Implement externalized AudioCapture + RecordingBuffer (see [Externalized Audio Capture](#externalized-audio-capture))
+- Integrate batch re-transcription with rift-local `mode=batch` (see rift-local Phase 2)

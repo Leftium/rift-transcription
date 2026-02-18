@@ -444,13 +444,14 @@
 		<section class="level">
 			<h2>Level 2: <code>&lt;TranscriptArea&gt;</code> component</h2>
 			<p class="level-desc">
-				Full experience. 3 dimensions of transcription:
+				Transcription color coding:
 				<span class="desc-composing">composing</span>,
 				<span class="desc-unstable">unstable</span>,
 				<span class="gradient-label"
 					>{#each gradientChars as { char, color }}{#if color}<span style:color>{char}</span
 							>{:else}{char}{/if}{/each}</span
-				> confidence.
+				>
+				or <span class="desc-no-confidence">unknown</span> confidence.
 			</p>
 			<div class="level-toggles">
 				<label>
@@ -571,6 +572,10 @@
 		font-weight: 600;
 	}
 	.gradient-label {
+		font-weight: 600;
+	}
+	.desc-no-confidence {
+		color: oklch(0.6 0.04 250);
 		font-weight: 600;
 	}
 

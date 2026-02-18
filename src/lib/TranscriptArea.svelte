@@ -84,16 +84,18 @@
 			.trim()
 	);
 
-	// OKLCH interpolation: teal (high confidence) → amber (low confidence).
-	// Endpoints derived from #0d9488 (teal-600) and #d97706 (amber-600).
-	// All three components (L, C, H) interpolate linearly with confidence.
-	const TEAL = { L: 0.6, C: 0.104, H: 185 }; // #0d9488
-	const AMBER = { L: 0.666, C: 0.157, H: 58 }; // #d97706
+	// OKLCH interpolation: blue (high confidence) → red (low confidence).
+	// Hue interpolates along the short arc (260→385) through purple/magenta.
+	// RED uses H=385 (≡25°) so the lerp stays monotonic without crossing green.
+	// No-data fallback is a muted blue-gray, clearly outside the blue-red scale.
+	const BLUE = { L: 0.6, C: 0.19, H: 260 }; // high confidence
+	const RED = { L: 0.52, C: 0.22, H: 385 }; // low confidence (385 ≡ 25°)
+	const NO_DATA = { L: 0.6, C: 0.04, H: 250 }; // muted blue-gray
 	function confidenceToColor(confidence: number | undefined): string {
-		if (confidence == null) return `oklch(${TEAL.L} ${TEAL.C} ${TEAL.H})`;
-		const L = AMBER.L + confidence * (TEAL.L - AMBER.L);
-		const C = AMBER.C + confidence * (TEAL.C - AMBER.C);
-		const H = AMBER.H + confidence * (TEAL.H - AMBER.H);
+		if (confidence == null) return `oklch(${NO_DATA.L} ${NO_DATA.C} ${NO_DATA.H})`;
+		const L = RED.L + confidence * (BLUE.L - RED.L);
+		const C = RED.C + confidence * (BLUE.C - RED.C);
+		const H = (RED.H + confidence * (BLUE.H - RED.H)) % 360;
 		return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H.toFixed(1)})`;
 	}
 
@@ -528,17 +530,17 @@
 		font-weight: 600;
 	}
 
-	/* Dictated text without utterance underlines — teal at full confidence, no decoration */
+	/* Dictated text without utterance underlines — no-data blue-gray fallback, no decoration */
 	.dictated {
-		color: oklch(0.6 0.104 185);
+		color: oklch(0.6 0.04 250);
 		font-weight: 600;
 	}
 
 	/* Committed voice-input text — solid underline to show utterance boundaries.
 	   Color comes from inline style:color (OKLCH confidence hue) when showConfidence
-	   is active; otherwise falls back to teal at full confidence. */
+	   is active; otherwise falls back to no-data blue-gray. */
 	.utterance {
-		color: oklch(0.6 0.104 185);
+		color: oklch(0.6 0.04 250);
 		font-weight: 600;
 		text-decoration: underline;
 		text-decoration-color: #ccc;
@@ -562,12 +564,12 @@
 		text-decoration-color: #bbb;
 	}
 	.interim.stable {
-		color: oklch(0.6 0.104 185);
+		color: oklch(0.6 0.04 250);
 		font-weight: 600;
 		text-decoration-style: dotted;
 	}
 	.interim.unstable {
-		color: oklch(0.6 0.06 185);
+		color: oklch(0.6 0.02 250);
 		font-weight: 600;
 		text-decoration-style: dotted;
 		font-style: italic;

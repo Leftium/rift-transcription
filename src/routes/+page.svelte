@@ -24,12 +24,12 @@
 	let replaying = $state(false);
 
 	// Replicates TranscriptArea's OKLCH confidence-to-color interpolation for the heading demo.
-	const TEAL = { L: 0.6, C: 0.104, H: 185 };
-	const AMBER = { L: 0.666, C: 0.157, H: 58 };
+	const BLUE = { L: 0.6, C: 0.19, H: 260 };
+	const RED = { L: 0.52, C: 0.22, H: 385 }; // 385 ≡ 25°
 	function confidenceToColor(confidence: number): string {
-		const L = AMBER.L + confidence * (TEAL.L - AMBER.L);
-		const C = AMBER.C + confidence * (TEAL.C - AMBER.C);
-		const H = AMBER.H + confidence * (TEAL.H - AMBER.H);
+		const L = RED.L + confidence * (BLUE.L - RED.L);
+		const C = RED.C + confidence * (BLUE.C - RED.C);
+		const H = (RED.H + confidence * (BLUE.H - RED.H)) % 360;
 		return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H.toFixed(1)})`;
 	}
 
@@ -277,17 +277,17 @@
 				]
 			},
 			{
-				// Words "10"–"100" at 10% confidence increments (0.1, 0.2, …, 1.0)
-				text: '10 20 30 40 50 60 70 80 90 100',
+				// Words "100"–"10" at confidence 1.0, 0.9, …, 0.1 (high confidence first)
+				text: '100 90 80 70 60 50 40 30 20 10',
 				isFinal: true,
 				isEndpoint: true,
 				segmentId: 2,
 				confidence: 0.55,
 				words: Array.from({ length: 10 }, (_, i) => ({
-					text: String((i + 1) * 10),
+					text: String((10 - i) * 10),
 					start: 4.0 + i * 0.4,
 					end: 4.0 + (i + 1) * 0.4,
-					confidence: (i + 1) / 10
+					confidence: (10 - i) / 10
 				}))
 			}
 		];
@@ -563,11 +563,11 @@
 		font-weight: 600;
 	}
 	.desc-high {
-		color: oklch(0.6 0.104 185);
+		color: oklch(0.6 0.19 260);
 		font-weight: 600;
 	}
 	.desc-low {
-		color: oklch(0.666 0.157 58);
+		color: oklch(0.52 0.22 25);
 		font-weight: 600;
 	}
 	.gradient-label {

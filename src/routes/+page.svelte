@@ -451,7 +451,7 @@
 					>{#each gradientChars as { char, color }}{#if color}<span style:color>{char}</span
 							>{:else}{char}{/if}{/each}</span
 				>
-				or <span class="desc-no-confidence">unknown</span> confidence.
+				or <span class="desc-no-confidence">unspecified</span> confidence.
 			</p>
 			<div class="level-toggles">
 				<label>
@@ -575,7 +575,7 @@
 		font-weight: 600;
 	}
 	.desc-no-confidence {
-		color: oklch(0.6 0.04 250);
+		color: oklch(0.6 0.104 185);
 		font-weight: 600;
 	}
 

@@ -90,7 +90,7 @@
 	// No-data fallback is a muted blue-gray, clearly outside the blue-red scale.
 	const BLUE = { L: 0.6, C: 0.19, H: 260 }; // high confidence
 	const RED = { L: 0.52, C: 0.22, H: 385 }; // low confidence (385 ≡ 25°)
-	const NO_DATA = { L: 0.6, C: 0.04, H: 250 }; // muted blue-gray
+	const NO_DATA = { L: 0.6, C: 0.104, H: 185 }; // teal (unspecified confidence)
 	function confidenceToColor(confidence: number | undefined): string {
 		if (confidence == null) return `oklch(${NO_DATA.L} ${NO_DATA.C} ${NO_DATA.H})`;
 		const L = RED.L + confidence * (BLUE.L - RED.L);
@@ -530,17 +530,17 @@
 		font-weight: 600;
 	}
 
-	/* Dictated text without utterance underlines — no-data blue-gray fallback, no decoration */
+	/* Dictated text without utterance underlines — teal (unspecified confidence), no decoration */
 	.dictated {
-		color: oklch(0.6 0.04 250);
+		color: oklch(0.6 0.104 185);
 		font-weight: 600;
 	}
 
 	/* Committed voice-input text — solid underline to show utterance boundaries.
 	   Color comes from inline style:color (OKLCH confidence hue) when showConfidence
-	   is active; otherwise falls back to no-data blue-gray. */
+	   is active; otherwise falls back to teal (unspecified confidence). */
 	.utterance {
-		color: oklch(0.6 0.04 250);
+		color: oklch(0.6 0.104 185);
 		font-weight: 600;
 		text-decoration: underline;
 		text-decoration-color: #ccc;
@@ -564,12 +564,12 @@
 		text-decoration-color: #bbb;
 	}
 	.interim.stable {
-		color: oklch(0.6 0.04 250);
+		color: oklch(0.6 0.104 185);
 		font-weight: 600;
 		text-decoration-style: dotted;
 	}
 	.interim.unstable {
-		color: oklch(0.6 0.02 250);
+		color: oklch(0.6 0.06 185);
 		font-weight: 600;
 		text-decoration-style: dotted;
 		font-style: italic;

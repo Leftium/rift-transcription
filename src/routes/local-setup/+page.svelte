@@ -1,6 +1,10 @@
 <script lang="ts">
 	const codeBlocks: Record<string, string> = {
-		install: `pip install rift-local[sherpa,moonshine]`,
+		'install-uv': `brew install uv`,
+		install: `uv tool install rift-local`,
+		'install-pip': `python3 -m venv .venv && source .venv/bin/activate\npip install rift-local`,
+		'install-sherpa': `uv tool install "rift-local[sherpa]"`,
+		'install-sherpa-pip': `pip install "rift-local[sherpa]"`,
 		'serve-open': `rift-local serve --open`,
 		serve: `rift-local serve`,
 		'serve-sherpa': `rift-local serve --asr zipformer-en-kroko`,
@@ -40,6 +44,21 @@
 	</ul>
 
 	<h2>Quick Start</h2>
+	<p>
+		Requires Python 3.10+. Install <a
+			href="https://docs.astral.sh/uv/"
+			target="_blank"
+			rel="noopener">uv</a
+		> first:
+	</p>
+	<div class="code-block">
+		<button class="copy-btn" onclick={() => copyCode('install-uv')}>
+			{copiedId === 'install-uv' ? '✓' : 'Copy'}
+		</button>
+		<pre><code>{codeBlocks['install-uv']}</code></pre>
+	</div>
+
+	<p>Then install rift-local:</p>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('install')}>
 			{copiedId === 'install' ? '✓' : 'Copy'}
@@ -47,6 +66,7 @@
 		<pre><code>{codeBlocks['install']}</code></pre>
 	</div>
 
+	<p>Start the server and open RIFT in your browser:</p>
 	<div class="code-block">
 		<button class="copy-btn" onclick={() => copyCode('serve-open')}>
 			{copiedId === 'serve-open' ? '✓' : 'Copy'}
@@ -58,6 +78,18 @@
 		That's it! Your browser will open with the Local source pre-selected. Click Enable Voice Input
 		to start.
 	</p>
+
+	<details class="pip-alternative">
+		<summary>Alternative: install with pip</summary>
+		<div class="details-content">
+			<div class="code-block">
+				<button class="copy-btn" onclick={() => copyCode('install-pip')}>
+					{copiedId === 'install-pip' ? '✓' : 'Copy'}
+				</button>
+				<pre><code>{codeBlocks['install-pip']}</code></pre>
+			</div>
+		</div>
+	</details>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="advanced-section">
@@ -89,6 +121,18 @@
 				<p>
 					Starts the server on <code>ws://localhost:2177</code> using
 					<code>moonshine-en-medium</code> without opening a browser.
+				</p>
+
+				<h4>Optional: sherpa-onnx Backend</h4>
+				<p>For additional sherpa-onnx models (Nemotron, Kroko):</p>
+				<div class="code-block">
+					<button class="copy-btn" onclick={() => copyCode('install-sherpa')}>
+						{copiedId === 'install-sherpa' ? '✓' : 'Copy'}
+					</button>
+					<pre><code>{codeBlocks['install-sherpa']}</code></pre>
+				</div>
+				<p class="pip-note">
+					Or with pip (inside a venv): <code>{codeBlocks['install-sherpa-pip']}</code>
 				</p>
 
 				<h4>Using Different Models</h4>
@@ -399,5 +443,30 @@
 
 	.advanced-content h4:first-child {
 		margin-top: 0;
+	}
+
+	.pip-alternative {
+		margin: 16px 0 24px;
+		font-size: 14px;
+	}
+
+	.pip-alternative summary {
+		cursor: pointer;
+		color: #666;
+		font-size: 13px;
+	}
+
+	.pip-alternative summary:hover {
+		color: #333;
+	}
+
+	.details-content {
+		padding-top: 8px;
+	}
+
+	.pip-note {
+		font-size: 12px;
+		color: #888;
+		margin: 4px 0 12px;
 	}
 </style>

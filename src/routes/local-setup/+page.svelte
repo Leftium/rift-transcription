@@ -1,7 +1,7 @@
 <script lang="ts">
 	const codeBlocks: Record<string, string> = {
+		'quick-start': `uv tool install rift-local && rift-local serve --open`,
 		'install-uv': `brew install uv`,
-		install: `uv tool install rift-local`,
 		'install-pip': `python3 -m venv .venv && source .venv/bin/activate\npip install rift-local`,
 		'install-sherpa': `uv tool install "rift-local[sherpa]"`,
 		'install-sherpa-pip': `pip install "rift-local[sherpa]"`,
@@ -44,34 +44,11 @@
 	</ul>
 
 	<h2>Quick Start</h2>
-	<p>
-		Requires Python 3.10+. Install <a
-			href="https://docs.astral.sh/uv/"
-			target="_blank"
-			rel="noopener">uv</a
-		> first:
-	</p>
 	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('install-uv')}>
-			{copiedId === 'install-uv' ? '✓' : 'Copy'}
+		<button class="copy-btn" onclick={() => copyCode('quick-start')}>
+			{copiedId === 'quick-start' ? '✓' : 'Copy'}
 		</button>
-		<pre><code>{codeBlocks['install-uv']}</code></pre>
-	</div>
-
-	<p>Then install rift-local:</p>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('install')}>
-			{copiedId === 'install' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['install']}</code></pre>
-	</div>
-
-	<p>Start the server and open RIFT in your browser:</p>
-	<div class="code-block">
-		<button class="copy-btn" onclick={() => copyCode('serve-open')}>
-			{copiedId === 'serve-open' ? '✓' : 'Copy'}
-		</button>
-		<pre><code>{codeBlocks['serve-open']}</code></pre>
+		<pre><code>{codeBlocks['quick-start']}</code></pre>
 	</div>
 
 	<p class="quick-note">
@@ -79,7 +56,26 @@
 		to start.
 	</p>
 
-	<details class="pip-alternative">
+	<details class="install-detail">
+		<summary>Don't have uv?</summary>
+		<div class="details-content">
+			<div class="code-block">
+				<button class="copy-btn" onclick={() => copyCode('install-uv')}>
+					{copiedId === 'install-uv' ? '✓' : 'Copy'}
+				</button>
+				<pre><code>{codeBlocks['install-uv']}</code></pre>
+			</div>
+			<p>
+				Or see the <a
+					href="https://docs.astral.sh/uv/getting-started/installation/"
+					target="_blank"
+					rel="noopener">uv installation docs</a
+				> for other platforms. Requires Python 3.10+.
+			</p>
+		</div>
+	</details>
+
+	<details class="install-detail">
 		<summary>Alternative: install with pip</summary>
 		<div class="details-content">
 			<div class="code-block">
@@ -445,18 +441,18 @@
 		margin-top: 0;
 	}
 
-	.pip-alternative {
-		margin: 16px 0 24px;
+	.install-detail {
+		margin: 8px 0;
 		font-size: 14px;
 	}
 
-	.pip-alternative summary {
+	.install-detail summary {
 		cursor: pointer;
 		color: #666;
 		font-size: 13px;
 	}
 
-	.pip-alternative summary:hover {
+	.install-detail summary:hover {
 		color: #333;
 	}
 

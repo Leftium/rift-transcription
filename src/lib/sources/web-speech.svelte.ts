@@ -13,7 +13,7 @@
 
 import { Ok } from 'wellcrafted/result';
 import type { TranscriptionSource, Transcript } from '$lib/types.js';
-import { SourceErr, broadcastTranscript } from '$lib/types.js';
+import { SourceErrors, broadcastTranscript } from '$lib/types.js';
 import { SvelteSet } from 'svelte/reactivity';
 
 // ---------------------------------------------------------------------------
@@ -117,9 +117,9 @@ export class WebSpeechSource implements TranscriptionSource {
 	startListening() {
 		const Ctor = getSpeechRecognition();
 		if (!Ctor) {
-			return SourceErr({
+			return SourceErrors.SourceError({
 				message: 'Web Speech API not available in this browser',
-				context: { source: this.name }
+				source: this.name
 			});
 		}
 

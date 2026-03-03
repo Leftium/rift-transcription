@@ -1,14 +1,17 @@
 import type { Result } from 'wellcrafted/result';
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
-export const { SourceError, SourceErr } = createTaggedError('SourceError').withContext<
-	{ source: string } | undefined
->();
-export type SourceError = ReturnType<typeof SourceError>;
+export const SourceErrors = defineErrors({
+	SourceError: ({ message, source }: { message: string; source?: string }) => ({
+		message,
+		source
+	})
+});
+export type SourceError = InferErrors<typeof SourceErrors>;
 
 // ---------------------------------------------------------------------------
 // Transcript — aligned with transcription-rs

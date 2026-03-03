@@ -213,12 +213,6 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 		margin-bottom: 8px;
 	}
 
-	h3 {
-		font-size: 0.95rem;
-		margin-top: 20px;
-		margin-bottom: 6px;
-	}
-
 	h4 {
 		font-size: 0.85rem;
 		margin: 14px 0 4px;

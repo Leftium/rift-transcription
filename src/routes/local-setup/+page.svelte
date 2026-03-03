@@ -88,21 +88,10 @@
 	</details>
 
 	<div class="advanced-section">
-		<h3
-			class="collapsible-header"
-			onclick={() => (showAdvanced = !showAdvanced)}
-			onkeydown={(e) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					showAdvanced = !showAdvanced;
-				}
-			}}
-			role="button"
-			tabindex="0"
-		>
+		<button class="collapsible-header" onclick={() => (showAdvanced = !showAdvanced)}>
 			<span class="toggle-icon">{showAdvanced ? '▼' : '▶'}</span>
 			Advanced Usage
-		</h3>
+		</button>
 
 		{#if showAdvanced}
 			<div class="advanced-content">
@@ -302,12 +291,6 @@
 		margin: 8px 0;
 	}
 
-	.intro {
-		color: #555;
-		font-size: 14px;
-		margin: 0 0 16px;
-	}
-
 	a {
 		color: #4a90d9;
 	}
@@ -414,7 +397,12 @@
 		padding: 12px 16px;
 		margin: 0;
 		font-size: 0.95rem;
+		font-weight: 600;
 		transition: background 0.15s;
+		width: 100%;
+		background: none;
+		border: none;
+		text-align: left;
 	}
 
 	.collapsible-header:hover {

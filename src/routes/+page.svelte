@@ -562,14 +562,6 @@
 		font-style: italic;
 		font-weight: 600;
 	}
-	.desc-high {
-		color: oklch(0.6 0.19 260);
-		font-weight: 600;
-	}
-	.desc-low {
-		color: oklch(0.52 0.22 25);
-		font-weight: 600;
-	}
 	.gradient-label {
 		font-weight: 600;
 	}

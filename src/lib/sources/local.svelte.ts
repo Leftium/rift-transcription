@@ -21,8 +21,9 @@
 
 import { Ok } from 'wellcrafted/result';
 import type { TranscriptionSource, Transcript, Word } from '$lib/types.js';
-import { SourceErr, broadcastTranscript } from '$lib/types.js';
+import { broadcastTranscript } from '$lib/types.js';
 import { AudioCapture } from '$lib/audio-capture.js';
+import { SvelteMap } from 'svelte/reactivity';
 
 // ---------------------------------------------------------------------------
 // Server response shape (superset of rift-local, C++, and Python servers)
@@ -103,7 +104,7 @@ export class LocalSource implements TranscriptionSource {
 	// Segment tracking
 	private currentSegment = -1;
 	private nextSegmentId = 0;
-	private lastTextBySegment = new Map<number, string>();
+	private lastTextBySegment = new SvelteMap<number, string>();
 
 	// Reconnect backoff (mirrors WebSpeechSource pattern)
 	private restartAttempts = 0;

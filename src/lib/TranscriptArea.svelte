@@ -3,7 +3,7 @@
 	import type { HTMLTextareaAttributes } from 'svelte/elements';
 	import type { Transcript, TranscriptEvent, Word } from '$lib/types.js';
 	import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
-	import { gg, fg, bg } from '@leftium/gg';
+	import { gg, bg } from '@leftium/gg';
 
 	interface Props extends HTMLTextareaAttributes {
 		value?: string;
@@ -387,7 +387,7 @@
 				)}{#each parts as part, i (i)}{#if part.isUtterance}{#if showConfidence && part.words && part.words.length > 0}<span
 								class:utterance={showUtterances}
 								class:dictated={!showUtterances}
-								>{#each part.words as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
+								>{#each part.words as word, wi (wi)}{#if wi > 0}{/if}<span
 										class="confidence-word"
 										style:color={confidenceToColor(word.confidence)}>{word.text}</span
 									>{/each}</span
@@ -399,7 +399,7 @@
 								>{part.text}</span
 							>{/if}{:else}<span class="committed">{part.text}</span>{/if}{/each}{:else}<span
 					class="committed">{beforeCursor}</span
-				>{/if}{#if interimWords.length > 0}{interimSpaceBefore}{#each interimWords as word, wi (wi)}{#if wi > 0}{' '}{/if}<span
+				>{/if}{#if interimWords.length > 0}{interimSpaceBefore}{#each interimWords as word, wi (wi)}{#if wi > 0}{/if}<span
 						class="interim-word"
 						class:stable={interimStable}
 						class:unstable={!interimStable}

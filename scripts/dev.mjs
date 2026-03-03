@@ -53,7 +53,9 @@ function getNgrokAuthtoken() {
 			const content = readFileSync(path, 'utf-8');
 			const match = content.match(/authtoken:\s*(\S+)/);
 			if (match) return match[1];
-		} catch {}
+		} catch {
+			// file not found or unreadable — try next path
+		}
 	}
 	return null;
 }

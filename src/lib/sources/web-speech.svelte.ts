@@ -14,6 +14,7 @@
 import { Ok } from 'wellcrafted/result';
 import type { TranscriptionSource, Transcript } from '$lib/types.js';
 import { SourceErr, broadcastTranscript } from '$lib/types.js';
+import { SvelteSet } from 'svelte/reactivity';
 
 // ---------------------------------------------------------------------------
 // Browser type shim — SpeechRecognition is not in lib.dom.d.ts everywhere
@@ -91,7 +92,7 @@ export class WebSpeechSource implements TranscriptionSource {
 	// Android Chrome re-delivers the entire results array on every onresult
 	// (resultIndex=0 every time), so without this guard old finals get
 	// re-emitted with new segmentIds, causing cumulative text duplication.
-	private finalizedResultIndices = new Set<number>();
+	private finalizedResultIndices = new SvelteSet<number>();
 
 	// Track cumulative final text to extract deltas.
 	// Android Chrome sends all-final cumulative results where each result's

@@ -87,7 +87,6 @@
 		</div>
 	</details>
 
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="advanced-section">
 		<h3
 			class="collapsible-header"

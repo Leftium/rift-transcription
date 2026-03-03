@@ -17,7 +17,7 @@
  */
 
 import { TRANSCRIPT_EVENT, needsSpaceBefore, needsSpaceAfter } from '$lib/types.js';
-import type { Transcript, TranscriptEvent } from '$lib/types.js';
+import type { TranscriptEvent } from '$lib/types.js';
 
 export function transcribable(node: HTMLTextAreaElement) {
 	function handleTranscriptEvent(e: Event) {

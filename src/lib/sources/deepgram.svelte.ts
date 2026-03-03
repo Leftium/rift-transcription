@@ -32,6 +32,7 @@ import { Ok } from 'wellcrafted/result';
 import type { TranscriptionSource, Transcript, Word } from '$lib/types.js';
 import { broadcastTranscript } from '$lib/types.js';
 import { AudioCapture } from '$lib/audio-capture.js';
+import { SvelteURLSearchParams } from 'svelte/reactivity';
 
 // ---------------------------------------------------------------------------
 // Deepgram response types
@@ -200,7 +201,7 @@ export class DeepgramSource implements TranscriptionSource {
 
 	private connectWebSocket(): Promise<void> {
 		return new Promise((resolve, reject) => {
-			const params = new URLSearchParams({
+			const params = new SvelteURLSearchParams({
 				model: 'nova-3',
 				language: 'en',
 				smart_format: 'true',

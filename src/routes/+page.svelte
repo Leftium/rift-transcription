@@ -432,7 +432,6 @@
 		</div>
 	</div>
 
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="input-group"
 		onfocusin={(e: FocusEvent) => {
@@ -448,7 +447,7 @@
 				<span class="desc-composing">composing</span>,
 				<span class="desc-unstable">unstable</span>,
 				<span class="gradient-label"
-					>{#each gradientChars as { char, color }}{#if color}<span style:color>{char}</span
+					>{#each gradientChars as { char, color } (char)}{#if color}<span style:color>{char}</span
 							>{:else}{char}{/if}{/each}</span
 				>
 				or <span class="desc-no-confidence">unspecified</span> confidence.

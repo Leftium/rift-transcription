@@ -197,9 +197,8 @@
 	function handleTranscript(transcript: Transcript): void {
 		if (debug) {
 			const data = `final=${transcript.isFinal} ep=${transcript.isEndpoint} seg=${transcript.segmentId} "${transcript.text}" val=${value.length} interims=${interims.size} ins=${insertionStart}..${insertionEnd}`;
-			gg.ns(
-				'rift-transcription:TranscriptArea:transcript',
-				ggTranscript.bold()`transcript` + ggTranscript` ${data}`
+			gg(ggTranscript.bold()`transcript`, ggTranscript` ${data}`).ns(
+				'rift-transcription:TranscriptArea:transcript'
 			);
 		}
 
@@ -321,7 +320,7 @@
 
 		if (debug) {
 			const data = `rawLen=${rawValue.length} val=${value.length} interims=${interims.size} snippet="${rawValue.slice(-40)}" trusted=${e.isTrusted} type=${(e as unknown as InputEvent).inputType}`;
-			gg.ns('rift-transcription:TranscriptArea:input', ggInput.bold()`input` + ggInput` ${data}`);
+			gg(ggInput.bold()`input`, ggInput` ${data}`).ns('rift-transcription:TranscriptArea:input');
 		}
 
 		// User typed while interims were active — interims are implicitly

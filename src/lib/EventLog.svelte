@@ -8,15 +8,13 @@
 			const t = detail;
 			const conf = t.confidence != null ? ` ${(t.confidence * 100).toFixed(0)}%` : '';
 			if (t.isFinal) {
-				gg.ns(
-					'rift-transcription:EventLog:final',
-					bg('#f0f8f0').fg('#2e7d32').bold()`final` +
-						bg('#f0f8f0').fg('#2e7d32')` seg=${t.segmentId} "${t.text}"${conf}`
-				);
+				gg(
+					bg('#f0f8f0').fg('#2e7d32').bold()`final`,
+					bg('#f0f8f0').fg('#2e7d32')` seg=${t.segmentId} "${t.text}"${conf}`
+				).ns('rift-transcription:EventLog:final');
 			} else {
-				gg.ns(
-					'rift-transcription:EventLog:interim',
-					fg('#888').bold()`interim` + fg('#888')` seg=${t.segmentId} "${t.text}"${conf}`
+				gg(fg('#888').bold()`interim`, fg('#888')` seg=${t.segmentId} "${t.text}"${conf}`).ns(
+					'rift-transcription:EventLog:interim'
 				);
 			}
 		}

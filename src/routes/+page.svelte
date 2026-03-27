@@ -506,13 +506,7 @@
 
 <style>
 	main {
-		max-width: 640px;
-		margin: 0 auto;
 		padding: 24px 16px;
-		font-family:
-			system-ui,
-			-apple-system,
-			sans-serif;
 	}
 
 	h1 {
@@ -525,21 +519,10 @@
 		margin: 0 0 2px;
 	}
 
-	code {
-		background: #f0f0f0;
-		padding: 1px 4px;
-		border-radius: 3px;
-		font-size: 0.85em;
-	}
-
 	.intro {
 		color: #555;
 		font-size: 14px;
 		margin: 0 0 16px;
-	}
-
-	.intro a {
-		color: #4a90d9;
 	}
 
 	.level {
@@ -590,6 +573,13 @@
 		padding: 3px 8px;
 	}
 
+	/* Override nimble's full-width form defaults for inline controls */
+	.controls select,
+	.controls input {
+		width: auto;
+		margin-bottom: 0;
+	}
+
 	.plain-textarea {
 		font-family: 'Courier New', Courier, monospace;
 		font-size: 16px;
@@ -604,11 +594,6 @@
 		resize: vertical;
 	}
 
-	.plain-textarea:focus {
-		outline: 2px solid #4a90d9;
-		outline-offset: -1px;
-	}
-
 	.controls {
 		display: flex;
 		align-items: center;
@@ -621,50 +606,19 @@
 		position: sticky;
 		top: 0;
 		z-index: 10;
-		background: white;
+		background: var(--nc-surface-1);
 		padding-bottom: 8px;
-		border-bottom: 1px solid #eee;
+		border-bottom: 1px solid var(--nc-border);
 		margin-bottom: 16px;
-	}
-
-	button {
-		padding: 6px 12px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		background: #f5f5f5;
-		cursor: pointer;
-		font-size: 13px;
-	}
-
-	button:hover {
-		background: #e8e8e8;
-	}
-
-	select {
-		padding: 6px 8px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		background: #f5f5f5;
-		font-size: 13px;
 	}
 
 	.server-url,
 	.api-key {
-		padding: 6px 8px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		font-size: 13px;
 		font-family: monospace;
 	}
 
 	.setup-link {
-		color: #4a90d9;
 		font-size: 13px;
-		text-decoration: none;
-	}
-
-	.setup-link:hover {
-		text-decoration: underline;
 	}
 
 	.status {

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@leftium/nimble.css': link:../../nimble.css
+
 importers:
 
   .:
@@ -11,6 +14,9 @@ importers:
       '@leftium/gg':
         specifier: ^0.0.50
         version: 0.0.50(svelte@5.53.6)
+      '@leftium/nimble.css':
+        specifier: link:../../nimble.css
+        version: link:../../nimble.css
       wellcrafted:
         specifier: ^0.33.0
         version: 0.33.0

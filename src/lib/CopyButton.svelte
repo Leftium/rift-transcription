@@ -42,16 +42,5 @@
 		color: #999;
 	}
 
-	.copy-btn {
-		padding: 8px 16px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		background: #f5f5f5;
-		cursor: pointer;
-		font-size: 14px;
-	}
-
-	.copy-btn:hover {
-		background: #e8e8e8;
-	}
+	/* nimble handles button styling */
 </style>

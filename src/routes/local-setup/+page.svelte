@@ -13,7 +13,6 @@
 	};
 
 	let copiedId = $state('');
-	let showAdvanced = $state(false);
 
 	async function copyCode(id: string) {
 		await navigator.clipboard.writeText(codeBlocks[id]);
@@ -87,14 +86,8 @@
 		</div>
 	</details>
 
-	<div class="advanced-section">
-		<button class="collapsible-header" onclick={() => (showAdvanced = !showAdvanced)}>
-			<span class="toggle-icon">{showAdvanced ? '▼' : '▶'}</span>
-			Advanced Usage
-		</button>
-
-		{#if showAdvanced}
-			<div class="advanced-content">
+	<details>
+		<summary>Advanced Usage</summary>
 				<h4>Server Only (no browser)</h4>
 				<div class="code-block">
 					<button class="copy-btn" onclick={() => copyCode('serve')}>
@@ -152,9 +145,7 @@
 						rel="noopener">rift-local README</a
 					> for more options.
 				</p>
-			</div>
-		{/if}
-	</div>
+	</details>
 
 	<h3>Available Models</h3>
 
@@ -224,25 +215,13 @@
 
 <style>
 	main {
-		max-width: 640px;
-		margin: 0 auto;
 		padding: 24px 16px;
-		font-family:
-			system-ui,
-			-apple-system,
-			sans-serif;
 	}
 
 	.back-link {
 		display: inline-block;
-		color: #4a90d9;
-		text-decoration: none;
 		font-size: 14px;
 		margin-bottom: 12px;
-	}
-
-	.back-link:hover {
-		text-decoration: underline;
 	}
 
 	h1 {
@@ -260,10 +239,6 @@
 
 	.intro-bullets li {
 		margin-bottom: 8px;
-	}
-
-	.intro-bullets a {
-		color: #4a90d9;
 	}
 
 	h2 {
@@ -289,17 +264,6 @@
 		line-height: 1.5;
 		color: #333;
 		margin: 8px 0;
-	}
-
-	a {
-		color: #4a90d9;
-	}
-
-	code {
-		background: #f0f0f0;
-		padding: 1px 4px;
-		border-radius: 3px;
-		font-size: 0.85em;
 	}
 
 	.code-block {
@@ -378,54 +342,6 @@
 		font-size: 13px;
 		margin: 12px 0 24px;
 		font-style: italic;
-	}
-
-	.advanced-section {
-		margin: 24px 0;
-		border: 1px solid #e0e0e0;
-		border-radius: 6px;
-		padding: 0;
-		background: #fafafa;
-	}
-
-	.collapsible-header {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		cursor: pointer;
-		user-select: none;
-		padding: 12px 16px;
-		margin: 0;
-		font-size: 0.95rem;
-		font-weight: 600;
-		transition: background 0.15s;
-		width: 100%;
-		background: none;
-		border: none;
-		text-align: left;
-	}
-
-	.collapsible-header:hover {
-		background: #f0f0f0;
-	}
-
-	.toggle-icon {
-		font-size: 0.7em;
-		color: #999;
-		transition: transform 0.2s;
-	}
-
-	.advanced-content {
-		padding: 0 16px 16px;
-	}
-
-	.advanced-content h4 {
-		margin-top: 16px;
-		margin-bottom: 8px;
-	}
-
-	.advanced-content h4:first-child {
-		margin-top: 0;
 	}
 
 	.install-detail {

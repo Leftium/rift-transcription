@@ -181,25 +181,13 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 
 <style>
 	main {
-		max-width: 640px;
-		margin: 0 auto;
 		padding: 24px 16px;
-		font-family:
-			system-ui,
-			-apple-system,
-			sans-serif;
 	}
 
 	.back-link {
 		display: inline-block;
-		color: #4a90d9;
-		text-decoration: none;
 		font-size: 14px;
 		margin-bottom: 12px;
-	}
-
-	.back-link:hover {
-		text-decoration: underline;
 	}
 
 	h1 {
@@ -220,20 +208,11 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 	}
 
 	.model-group {
-		border: 1px solid #ddd;
-		border-radius: 6px;
-		padding: 0 16px;
 		margin: 12px 0;
 	}
 
-	.model-group[open] {
-		padding-bottom: 12px;
-	}
-
 	.model-group summary {
-		cursor: pointer;
-		padding: 12px 0;
-		list-style: revert;
+		padding: 12px 1em;
 	}
 
 	.model-group summary strong {
@@ -264,17 +243,6 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 	.note {
 		color: #666;
 		font-size: 13px;
-	}
-
-	a {
-		color: #4a90d9;
-	}
-
-	code {
-		background: #f0f0f0;
-		padding: 1px 4px;
-		border-radius: 3px;
-		font-size: 0.85em;
 	}
 
 	.code-block {
@@ -333,7 +301,4 @@ rm -rf sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06*`,
 		margin-bottom: 6px;
 	}
 
-	.flags code {
-		font-size: 0.85em;
-	}
 </style>

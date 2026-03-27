@@ -37,6 +37,7 @@
 	},
 	"dependencies": {
 		"@leftium/gg": "^0.0.50",
+		"@leftium/nimble.css": "^0.7.0",
 		"wellcrafted": "^0.33.0"
 	}
 }

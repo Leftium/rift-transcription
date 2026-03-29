@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@leftium/nimble.css': link:../../nimble.css
-
 importers:
 
   .:
@@ -15,8 +12,8 @@ importers:
         specifier: ^0.0.50
         version: 0.0.50(svelte@5.53.6)
       '@leftium/nimble.css':
-        specifier: link:../../nimble.css
-        version: link:../../nimble.css
+        specifier: latest
+        version: 0.12.0
       wellcrafted:
         specifier: ^0.33.0
         version: 0.33.0
@@ -327,6 +324,9 @@ packages:
     peerDependenciesMeta:
       svelte:
         optional: true
+
+  '@leftium/nimble.css@0.12.0':
+    resolution: {integrity: sha512-mqg6H/vUtrCrQ6Zuwg3U2gMQyEoAbGo41HWqVDzmeJvFFXw5xxKdLfBVUBY29r6ALeTKH21XsJgQJrdZJzSsJg==}
 
   '@ngrok/ngrok-android-arm64@1.7.0':
     resolution: {integrity: sha512-8tco3ID6noSaNy+CMS7ewqPoIkIM6XO5COCzsUp3Wv3XEbMSyn65RN6cflX2JdqLfUCHcMyD0ahr9IEiHwqmbQ==}
@@ -1401,6 +1401,8 @@ snapshots:
       launch-editor: 2.13.1
     optionalDependencies:
       svelte: 5.53.6
+
+  '@leftium/nimble.css@0.12.0': {}
 
   '@ngrok/ngrok-android-arm64@1.7.0':
     optional: true
